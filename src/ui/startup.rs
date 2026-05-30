@@ -13,10 +13,22 @@ pub struct StartupPropertiesView {
     pub systemd: Option<services::ServiceProperties>,
 }
 
+/// Boot-time filter presets surfaced as quick-pick chips.
+const BOOT_PRESETS: &[(f64, &str)] = &[
+    (0.0, "Any"),
+    (0.5, ">0.5s"),
+    (1.0, ">1s"),
+    (2.0, ">2s"),
+    (5.0, ">5s"),
+    (10.0, ">10s"),
+];
+
 pub struct State {
     pub entries: Vec<StartupEntry>,
     pub last_loaded: Instant,
     pub filter: String,
+    /// Minimum boot time in seconds to show (inclusive). 0.0 = no filter.
+    pub min_boot_secs: f64,
     pub last_error: Option<String>,
     pub properties: Option<StartupPropertiesView>,
 }
@@ -27,6 +39,7 @@ impl Default for State {
             entries: startup::collect(),
             last_loaded: Instant::now(),
             filter: String::new(),
+            min_boot_secs: 0.0,
             last_error: None,
             properties: None,
         }
@@ -44,8 +57,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
             }
             ui.add(
                 egui::TextEdit::singleline(&mut state.filter)
-                    .hint_text("Filter by name or time (e.g. >0.5)")
-                    .desired_width(220.0),
+                    .hint_text("Filter by name")
+                    .desired_width(180.0),
             );
         });
     });
@@ -55,20 +68,40 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
         )
         .color(theme::text_dim()),
     );
-    ui.add_space(10.0);
+
+    // Boot-time threshold: preset chips + fine slider.
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Min boot time:").color(theme::text_dim()).small());
+        for (secs, label) in BOOT_PRESETS {
+            let selected = (state.min_boot_secs - secs).abs() < 0.001;
+            if preset_chip(ui, label, selected).clicked() {
+                state.min_boot_secs = *secs;
+            }
+        }
+        ui.add_space(6.0);
+        let mut val = state.min_boot_secs;
+        if ui
+            .add(
+                egui::Slider::new(&mut val, 0.0..=10.0)
+                    .step_by(0.1)
+                    .suffix(" s")
+                    .text_color(theme::text_dim()),
+            )
+            .changed()
+        {
+            state.min_boot_secs = (val * 10.0).round() / 10.0;
+        }
+    });
+
+    ui.add_space(4.0);
 
     if let Some(err) = &state.last_error {
         ui.colored_label(theme::err(), err);
         ui.add_space(8.0);
     }
 
-    let raw_filter = state.filter.trim();
-    let time_filter = parse_time_filter(raw_filter);
-    let text_filter = if time_filter.is_some() {
-        String::new()
-    } else {
-        raw_filter.to_lowercase()
-    };
+    let text_filter = state.filter.trim().to_lowercase();
+    let min_secs = state.min_boot_secs;
     let mut to_toggle: Vec<(usize, bool)> = Vec::new();
     let mut open_properties_idx: Option<usize> = None;
 
@@ -76,12 +109,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
     let mut critical_idx: Vec<usize> = Vec::new();
     let mut normal_idx: Vec<usize> = Vec::new();
     for (idx, e) in state.entries.iter().enumerate() {
-        if let Some((op, secs)) = time_filter {
-            let ms = e.boot_time_ms.unwrap_or(0) as f64 / 1_000.0;
-            if !op.matches(ms, secs) {
+        if min_secs > 0.0 {
+            let boot_s = e.boot_time_ms.unwrap_or(0) as f64 / 1_000.0;
+            if boot_s < min_secs {
                 continue;
             }
-        } else if !text_filter.is_empty()
+        }
+        if !text_filter.is_empty()
             && !e.name.to_lowercase().contains(&text_filter)
             && !e.exec.to_lowercase().contains(&text_filter)
         {
@@ -468,47 +502,23 @@ fn scope_badge(s: &StartupSource) -> &'static str {
     }
 }
 
-#[derive(Copy, Clone)]
-enum Op {
-    Ge,
-    Gt,
-    Le,
-    Lt,
-    Eq,
-}
-
-impl Op {
-    fn matches(self, value: f64, target: f64) -> bool {
-        match self {
-            Op::Ge => value >= target,
-            Op::Gt => value > target,
-            Op::Le => value <= target,
-            Op::Lt => value < target,
-            Op::Eq => (value - target).abs() < 0.05,
-        }
-    }
-}
-
-fn parse_time_filter(s: &str) -> Option<(Op, f64)> {
-    let s = s.trim();
-    if s.is_empty() {
-        return None;
-    }
-    let (op, rest) = if let Some(r) = s.strip_prefix(">=") {
-        (Op::Ge, r)
-    } else if let Some(r) = s.strip_prefix("<=") {
-        (Op::Le, r)
-    } else if let Some(r) = s.strip_prefix('>') {
-        (Op::Gt, r)
-    } else if let Some(r) = s.strip_prefix('<') {
-        (Op::Lt, r)
-    } else if let Some(r) = s.strip_prefix('=') {
-        (Op::Eq, r)
+fn preset_chip(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
+    let bg = if selected {
+        egui::Color32::from_rgba_unmultiplied(0x60, 0xCD, 0xFF, 50)
     } else {
-        (Op::Ge, s)
+        theme::panel_bg()
     };
-    let rest = rest.trim().trim_end_matches('s').trim();
-    rest.parse::<f64>().ok().map(|v| (op, v))
+    let fg = if selected {
+        theme::accent()
+    } else {
+        theme::text()
+    };
+    ui.add(
+        egui::Button::new(egui::RichText::new(label).color(fg).strong())
+            .fill(bg)
+            .corner_radius(egui::CornerRadius::same(6))
+            .min_size(egui::vec2(60.0, 24.0)),
+    )
 }
 
 fn format_boot_time(ms: Option<u64>) -> String {
@@ -529,56 +539,6 @@ fn format_boot_time(ms: Option<u64>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_time_filter_with_no_prefix_means_ge() {
-        // Bare number = ">=" so users can type "0.5" without thinking about
-        // operators for the common "show slow startups" case.
-        let (op, v) = parse_time_filter("0.5").unwrap();
-        assert!(matches!(op, Op::Ge));
-        assert_eq!(v, 0.5);
-    }
-
-    #[test]
-    fn parse_time_filter_all_operator_prefixes() {
-        assert!(matches!(parse_time_filter(">1").unwrap().0, Op::Gt));
-        assert!(matches!(parse_time_filter("<1").unwrap().0, Op::Lt));
-        assert!(matches!(parse_time_filter(">=1").unwrap().0, Op::Ge));
-        assert!(matches!(parse_time_filter("<=1").unwrap().0, Op::Le));
-        assert!(matches!(parse_time_filter("=1").unwrap().0, Op::Eq));
-    }
-
-    #[test]
-    fn parse_time_filter_strips_trailing_unit_suffix() {
-        // The hint text suggests `>0.5` but users often type `>0.5s`.
-        let (_, v) = parse_time_filter(">0.5s").unwrap();
-        assert_eq!(v, 0.5);
-    }
-
-    #[test]
-    fn parse_time_filter_rejects_non_numeric() {
-        assert!(parse_time_filter("hello").is_none());
-        assert!(parse_time_filter("").is_none());
-        assert!(parse_time_filter(">").is_none());
-    }
-
-    #[test]
-    fn op_matches_inclusive_vs_exclusive() {
-        assert!(Op::Ge.matches(1.0, 1.0));
-        assert!(!Op::Gt.matches(1.0, 1.0));
-        assert!(Op::Le.matches(1.0, 1.0));
-        assert!(!Op::Lt.matches(1.0, 1.0));
-    }
-
-    #[test]
-    fn op_matches_eq_uses_epsilon() {
-        // Eq tolerates 50 ms drift — the boot-time series is reported with
-        // ~100 ms granularity, so strict equality would never fire.
-        assert!(Op::Eq.matches(1.02, 1.0));
-        assert!(Op::Eq.matches(0.96, 1.0));
-        assert!(!Op::Eq.matches(1.06, 1.0));
-        assert!(!Op::Eq.matches(0.93, 1.0));
-    }
 
     #[test]
     fn format_boot_time_none_dash() {
