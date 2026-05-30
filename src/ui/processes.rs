@@ -451,6 +451,47 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
             state.properties = Some(build_properties_view(p));
         }
     }
+
+    // Keyboard shortcuts: Delete → End task, Shift+Delete → Force kill.
+    // Only fire when the Processes tab is focused (which is always true
+    // inside this function — app.rs only calls us when the tab is active).
+    let keys = ui.ctx().input(|i| {
+        let del = i.key_pressed(egui::Key::Delete);
+        let shift = i.modifiers.shift;
+        (del, shift)
+    });
+    if keys.0 && keys.1 {
+        // Shift+Delete → Force kill
+        if let Some(pid) = state.selected_pid {
+            let _ = monitor::processes::force_kill(pid);
+            state.selected_pid = None;
+        } else if let Some(name) = state.selected_group.as_deref() {
+            let pids: Vec<u32> = snap.processes.iter()
+                .filter(|p| p.name == name)
+                .map(|p| p.pid)
+                .collect();
+            for pid in &pids {
+                let _ = monitor::processes::force_kill(*pid);
+            }
+            state.selected_group = None;
+        }
+    } else if keys.0 {
+        // Delete → End task
+        if let Some(pid) = state.selected_pid {
+            let _ = monitor::processes::terminate(pid);
+            state.selected_pid = None;
+        } else if let Some(name) = state.selected_group.as_deref() {
+            let pids: Vec<u32> = snap.processes.iter()
+                .filter(|p| p.name == name)
+                .map(|p| p.pid)
+                .collect();
+            for pid in &pids {
+                let _ = monitor::processes::terminate(*pid);
+            }
+            state.selected_group = None;
+        }
+    }
+
     render_properties_window(ui.ctx(), &mut state.properties, snap);
 
     ui.add_space(8.0);
