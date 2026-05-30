@@ -1,14 +1,16 @@
 use crate::app::Tab;
+use crate::i18n;
 use crate::theme;
 
 pub fn show(ui: &mut egui::Ui, tab: &mut Tab, compact: bool) {
     ui.add_space(6.0);
 
+    let m = i18n::m();
     for (t, label) in [
-        (Tab::Processes, "Processes"),
-        (Tab::Performance, "Performance"),
-        (Tab::Startup, "Startup apps"),
-        (Tab::Services, "Services"),
+        (Tab::Processes, m.tab_processes),
+        (Tab::Performance, m.tab_performance),
+        (Tab::Startup, m.tab_startup),
+        (Tab::Services, m.tab_services),
     ] {
         let selected = *tab == t;
         let resp = side_button(ui, t, label, selected, compact);
@@ -22,7 +24,7 @@ pub fn show(ui: &mut egui::Ui, tab: &mut Tab, compact: bool) {
     ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
         ui.add_space(6.0);
         let selected = *tab == Tab::Settings;
-        let resp = side_button(ui, Tab::Settings, "Settings", selected, compact);
+        let resp = side_button(ui, Tab::Settings, i18n::m().tab_settings, selected, compact);
         if resp.clicked() {
             *tab = Tab::Settings;
         }

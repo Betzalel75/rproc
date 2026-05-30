@@ -2,6 +2,7 @@
 
 mod app;
 mod daemon;
+mod i18n;
 mod monitor;
 mod settings;
 mod theme;
@@ -22,6 +23,7 @@ fn main() -> anyhow::Result<()> {
 
     // Initialise the global theme palette before the first frame.
     theme::init(settings.theme());
+    i18n::init(settings.lang());
 
     // Make sure a background sampler is running so this launch (and the
     // next one) sees fresh history. No-op if one is already alive, and

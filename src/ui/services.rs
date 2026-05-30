@@ -3,6 +3,7 @@ use std::time::Instant;
 use egui_extras::{Column, TableBuilder};
 
 use crate::monitor::services::{self, ServiceInfo, ServiceScope};
+use crate::i18n;
 use crate::theme;
 use crate::ui::widgets;
 
@@ -41,10 +42,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
     ui.horizontal(|ui| {
         ui.heading("Services");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("\u{21BB}").on_hover_text("Reload").clicked() {
+            if ui.button("\u{21BB}").on_hover_text(i18n::m().svc_reload).clicked() {
                 refresh(state);
             }
-            ui.toggle_value(&mut state.show_only_running, "Running only");
+            ui.toggle_value(&mut state.show_only_running, i18n::m().svc_running_only);
             ui.add(
                 egui::TextEdit::singleline(&mut state.filter)
                     .hint_text("Filter…")
@@ -52,7 +53,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
             );
         });
     });
-    ui.label(egui::RichText::new("systemd system + user units (.service).").color(theme::text_dim()));
+    ui.label(egui::RichText::new(i18n::m().svc_desc).color(theme::text_dim()));
 
     if let Some((ok, msg)) = &state.last_message {
         ui.colored_label(if *ok { theme::ok() } else { theme::err() }, msg);
@@ -99,22 +100,22 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
                         .column(Column::initial(230.0))
                         .header(26.0, |mut h| {
                             h.col(|ui| {
-                                ui.strong("Unit");
+                                ui.strong(i18n::m().svc_col_unit);
                             });
                             h.col(|ui| {
-                                ui.strong("Scope");
+                                ui.strong(i18n::m().svc_col_scope);
                             });
                             h.col(|ui| {
-                                ui.strong("Active");
+                                ui.strong(i18n::m().svc_col_active);
                             });
                             h.col(|ui| {
-                                ui.strong("Sub");
+                                ui.strong(i18n::m().svc_col_sub);
                             });
                             h.col(|ui| {
-                                ui.strong("Description");
+                                ui.strong(i18n::m().svc_col_desc);
                             });
                             h.col(|ui| {
-                                ui.strong("Actions");
+                                ui.strong(i18n::m().svc_col_actions);
                             });
                         })
                         .body(|body| {
@@ -141,13 +142,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
                                 });
                                 row.col(|ui| {
                                     ui.horizontal(|ui| {
-                                        if ui.small_button("Start").clicked() {
+                                        if ui.small_button(i18n::m().svc_start).clicked() {
                                             actions.push((idx, "start"));
                                         }
-                                        if ui.small_button("Stop").clicked() {
+                                        if ui.small_button(i18n::m().svc_stop).clicked() {
                                             actions.push((idx, "stop"));
                                         }
-                                        if ui.small_button("Restart").clicked() {
+                                        if ui.small_button(i18n::m().svc_restart).clicked() {
                                             actions.push((idx, "restart"));
                                         }
                                     });
@@ -158,25 +159,25 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
                                 }
                                 resp.context_menu(|ui| {
                                     ui.set_min_width(180.0);
-                                    if ui.button("Start").clicked() {
+                                    if ui.button(i18n::m().svc_start).clicked() {
                                         actions.push((idx, "start"));
                                         ui.close();
                                     }
-                                    if ui.button("Stop").clicked() {
+                                    if ui.button(i18n::m().svc_stop).clicked() {
                                         actions.push((idx, "stop"));
                                         ui.close();
                                     }
-                                    if ui.button("Restart").clicked() {
+                                    if ui.button(i18n::m().svc_restart).clicked() {
                                         actions.push((idx, "restart"));
                                         ui.close();
                                     }
                                     ui.separator();
-                                    if ui.button("Copy unit name").clicked() {
+                                    if ui.button(i18n::m().svc_ctx_copy_unit).clicked() {
                                         ui.ctx().copy_text(s.name.clone());
                                         ui.close();
                                     }
                                     ui.separator();
-                                    if ui.button("Properties").clicked() {
+                                    if ui.button(i18n::m().svc_ctx_properties).clicked() {
                                         open_properties = Some((s.name.clone(), s.scope.clone()));
                                         ui.close();
                                     }
@@ -202,7 +203,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
 
     ui.add_space(6.0);
     ui.label(
-        egui::RichText::new(format!("{} units shown", rows.len()))
+        egui::RichText::new(i18n::m().svc_units_shown.replace("{n}", &rows.len().to_string()))
             .color(theme::text_dim())
             .small(),
     );
@@ -268,20 +269,20 @@ fn render_service_properties_window(
                     }
                 });
             });
-            widgets::stat(ui, "Unit", &name);
-            widgets::stat(ui, "Scope", scope_str(&scope));
+            widgets::stat(ui, i18n::m().svc_col_unit, &name);
+            widgets::stat(ui, i18n::m().svc_col_scope, scope_str(&scope));
             if !props.description.is_empty() {
-                widgets::stat(ui, "Description", &props.description);
+                widgets::stat(ui, i18n::m().svc_col_desc, &props.description);
             }
             ui.separator();
             if !props.load_state.is_empty() {
                 widgets::stat(ui, "Load", &props.load_state);
             }
             if !props.active_state.is_empty() {
-                widgets::stat(ui, "Active", &props.active_state);
+                widgets::stat(ui, i18n::m().svc_col_active, &props.active_state);
             }
             if !props.sub_state.is_empty() {
-                widgets::stat(ui, "Sub", &props.sub_state);
+                widgets::stat(ui, i18n::m().svc_col_sub, &props.sub_state);
             }
             if !props.unit_file_state.is_empty() {
                 widgets::stat(ui, "Unit file state", &props.unit_file_state);

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
+use crate::i18n::{self, Lang};
 use crate::monitor::notify::{self, Thresholds};
 use crate::theme::{self, Theme};
 
@@ -20,6 +21,8 @@ pub struct Settings {
     theme: Arc<AtomicU8>,
     /// Notification thresholds shared with the sampler thread.
     thresholds: Thresholds,
+    /// UI language (0 = en, 1 = fr).
+    lang: Arc<AtomicU8>,
 }
 
 impl Default for Settings {
@@ -29,6 +32,7 @@ impl Default for Settings {
             daemon_enabled: Arc::new(AtomicBool::new(true)),
             theme: Arc::new(AtomicU8::new(2)), // system
             thresholds: Thresholds::default(),
+            lang: Arc::new(AtomicU8::new(0)), // en
         }
     }
 }
@@ -59,6 +63,7 @@ impl Settings {
         let Ok(text) = std::fs::read_to_string(&path) else {
             return settings;
         };
+        let mut lang_set = false;
         for line in text.lines() {
             let Some((key, value)) = line.split_once('=') else {
                 continue;
@@ -72,6 +77,11 @@ impl Settings {
                 "theme" => {
                     let t = Theme::from_str(value.trim()).unwrap_or(Theme::Dark);
                     settings.theme.store(t as u8, Ordering::Relaxed);
+                }
+                "lang" => {
+                    let l = Lang::from_str(value.trim()).unwrap_or(Lang::En);
+                    settings.lang.store(l as u8, Ordering::Relaxed);
+                    lang_set = true;
                 }
                 "notify_cpu" => {
                     if let Ok(v) = value.trim().parse::<u8>() {
@@ -90,6 +100,10 @@ impl Settings {
                 }
                 _ => {}
             }
+        }
+        if !lang_set {
+            let sys = i18n::detect_system_lang();
+            settings.lang.store(sys as u8, Ordering::Relaxed);
         }
         settings
     }
@@ -134,6 +148,19 @@ impl Settings {
         self.save_external();
     }
 
+    pub fn lang(&self) -> Lang {
+        match self.lang.load(Ordering::Relaxed) {
+            0 => Lang::En,
+            _ => Lang::Fr,
+        }
+    }
+
+    pub fn set_lang(&self, l: Lang) {
+        self.lang.store(l as u8, Ordering::Relaxed);
+        i18n::set_lang(l);
+        self.save_external();
+    }
+
     /// Returns the notification thresholds handle — cheap Arc clone for the
     /// sampler thread.
     pub fn thresholds(&self) -> Thresholds {
@@ -148,11 +175,12 @@ impl Settings {
             return;
         };
         let theme_str = self.theme().as_str();
+        let lang_str = self.lang().as_str();
         let cpu = self.thresholds.cpu_pct.load(Ordering::Relaxed);
         let ram = self.thresholds.ram_pct.load(Ordering::Relaxed);
         let cooldown = self.thresholds.cooldown_secs.load(Ordering::Relaxed);
         let body = format!(
-            "daemon_enabled={}\ntheme={theme_str}\n\
+            "daemon_enabled={}\ntheme={theme_str}\nlang={lang_str}\n\
              notify_cpu={cpu}\nnotify_ram={ram}\nnotify_cooldown={cooldown}\n",
             self.daemon_enabled.load(Ordering::Relaxed),
         );

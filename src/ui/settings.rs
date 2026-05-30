@@ -1,6 +1,8 @@
 use std::sync::atomic::Ordering;
 
 use crate::daemon;
+use crate::i18n;
+use crate::i18n::Lang;
 use crate::monitor::notify;
 use crate::settings::{MAX_REFRESH_MS, MIN_REFRESH_MS, REFRESH_PRESETS, Settings};
 use crate::theme::{self, Theme};
@@ -24,7 +26,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
     widgets::card(ui, |ui| {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.label(egui::RichText::new("Refresh rate").strong().size(15.0));
+                ui.label(egui::RichText::new(i18n::m().set_refresh_title).strong().size(15.0));
                 ui.label(
                     egui::RichText::new(
                         "How often the sampler thread polls the system. \
@@ -55,7 +57,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
         // Fine slider for arbitrary values.
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("Custom")
+                egui::RichText::new(i18n::m().set_custom)
                     .color(theme::text_dim())
                     .small(),
             );
@@ -73,7 +75,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
 
         ui.add_space(6.0);
         ui.label(
-            egui::RichText::new(format!("Currently sampling every {}", format_ms(current)))
+            egui::RichText::new(format!("{} {}", i18n::m().set_currently, format_ms(current)))
                 .color(theme::accent())
                 .strong(),
         );
@@ -84,7 +86,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
     widgets::card(ui, |ui| {
         ui.vertical(|ui| {
             ui.label(
-                egui::RichText::new("Background history")
+                egui::RichText::new(i18n::m().set_bg_title)
                     .strong()
                     .size(15.0),
             );
@@ -106,7 +108,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
         if ui
             .checkbox(
                 &mut enabled,
-                egui::RichText::new("Keep the last 60 seconds in the background").strong(),
+                egui::RichText::new(i18n::m().set_bg_checkbox).strong(),
             )
             .changed()
         {
@@ -122,9 +124,9 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
 
         ui.add_space(6.0);
         let (status, color) = if enabled {
-            ("Background sampler running", theme::accent())
+            (i18n::m().set_bg_running, theme::accent())
         } else {
-            ("Background sampler off", theme::text_dim())
+            (i18n::m().set_bg_off, theme::text_dim())
         };
         ui.label(egui::RichText::new(status).color(color).strong());
     });
@@ -135,7 +137,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
     widgets::card(ui, |ui| {
         ui.vertical(|ui| {
             ui.label(
-                egui::RichText::new("Notifications")
+                egui::RichText::new(i18n::m().set_notif_title)
                     .strong()
                     .size(15.0),
             );
@@ -155,7 +157,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
 
         // CPU threshold
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("CPU threshold").strong());
+            ui.label(egui::RichText::new(i18n::m().set_notif_cpu).strong());
             ui.add_space(20.0);
             let mut cpu = thresh.cpu_pct.load(Ordering::Relaxed);
             if ui
@@ -173,7 +175,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
 
         // RAM threshold
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("RAM threshold").strong());
+            ui.label(egui::RichText::new(i18n::m().set_notif_ram).strong());
             ui.add_space(18.0);
             let mut ram = thresh.ram_pct.load(Ordering::Relaxed);
             if ui
@@ -191,7 +193,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
 
         // Cooldown
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Cooldown").strong());
+            ui.label(egui::RichText::new(i18n::m().set_notif_cooldown).strong());
             ui.add_space(44.0);
             let mut cooldown = thresh.cooldown_secs.load(Ordering::Relaxed);
             if ui
@@ -213,7 +215,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
     // --- Theme toggle -------------------------------------------------------
     widgets::card(ui, |ui| {
         ui.vertical(|ui| {
-            ui.label(egui::RichText::new("Appearance").strong().size(15.0));
+            ui.label(egui::RichText::new(i18n::m().set_appearance_title).strong().size(15.0));
             ui.label(
                 egui::RichText::new(
                     "Switch between dark, light, or follow your system preference. \
@@ -228,9 +230,9 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
         let current = settings.theme();
         ui.horizontal(|ui| {
             for (choice, label) in [
-                (Theme::System, "System"),
-                (Theme::Dark, "Dark"),
-                (Theme::Light, "Light"),
+                (Theme::System, i18n::m().set_theme_system),
+                (Theme::Dark, i18n::m().set_theme_dark),
+                (Theme::Light, i18n::m().set_theme_light),
             ] {
                 let selected = current == choice;
                 if ui
@@ -246,17 +248,38 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
 
     ui.add_space(12.0);
 
+    // --- Language selector --------------------------------------------------
     widgets::card(ui, |ui| {
-        ui.label(egui::RichText::new("About").strong().size(15.0));
+        ui.label(egui::RichText::new("Language").strong().size(15.0));
+        ui.add_space(6.0);
+        let current = settings.lang();
+        ui.horizontal(|ui| {
+            for (choice, label) in [(Lang::En, "English"), (Lang::Fr, "Français")] {
+                let selected = current == choice;
+                if ui
+                    .selectable_label(selected, egui::RichText::new(label).strong())
+                    .clicked()
+                    && !selected
+                {
+                    settings.set_lang(choice);
+                }
+            }
+        });
+    });
+
+    ui.add_space(12.0);
+
+    widgets::card(ui, |ui| {
+        ui.label(egui::RichText::new(i18n::m().set_about_title).strong().size(15.0));
         ui.add_space(4.0);
-        widgets::stat(ui, "Version", env!("CARGO_PKG_VERSION"));
+        widgets::stat(ui, i18n::m().set_version, env!("CARGO_PKG_VERSION"));
         widgets::stat(
             ui,
-            "Build",
+            i18n::m().set_build,
             if cfg!(debug_assertions) {
-                "debug"
+                i18n::m().set_build_debug
             } else {
-                "release"
+                i18n::m().set_build_release
             },
         );
     });

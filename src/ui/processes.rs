@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use egui_extras::{Column, TableBuilder, TableRow};
 
 use crate::daemon::storage;
+use crate::i18n;
 use crate::monitor::{self, Snapshot};
 use crate::theme;
 use crate::ui::icons;
@@ -294,7 +295,7 @@ fn push_tree_rows<'a>(
 
 // --- Grouped view -------------------------------------------------------------
 
-/// Split the built groups into the "Apps" section (processes with a freedesktop
+/// Split the built groups into the i18n::m().proc_section_apps section (processes with a freedesktop
 /// `.desktop` entry — launchable applications) and the background section
 /// (daemons, kernel threads, helpers). Each section is sorted independently by
 /// the caller so background processes can never rank above apps.
@@ -327,14 +328,14 @@ fn append_section<'a>(
 pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
     // Title row + selection actions on the right.
     ui.horizontal(|ui| {
-        ui.heading("Processes");
+        ui.heading(i18n::m().proc_heading);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if let Some(pid) = state.selected_pid {
-                if ui.button("Force kill").clicked() {
+                if ui.button(i18n::m().proc_force_kill).clicked() {
                     let _ = monitor::processes::force_kill(pid);
                     state.selected_pid = None;
                 }
-                if ui.button("End task").clicked() {
+                if ui.button(i18n::m().proc_end_task).clicked() {
                     let _ = monitor::processes::terminate(pid);
                     state.selected_pid = None;
                 }
@@ -346,8 +347,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
                     .map(|p| p.pid)
                     .collect();
                 let n = pids.len();
-                let force = ui.button(format!("Force kill ({n})")).clicked();
-                let end = ui.button(format!("End task ({n})")).clicked();
+                let force = ui.button(i18n::m().proc_force_kill_n.replace("{n}", &n.to_string())).clicked();
+                let end = ui.button(i18n::m().proc_end_task_n.replace("{n}", &n.to_string())).clicked();
                 if force {
                     for pid in &pids {
                         let _ = monitor::processes::force_kill(*pid);
@@ -360,7 +361,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
                     state.selected_group = None;
                 }
             } else {
-                ui.add_enabled(false, egui::Button::new("End task"));
+                ui.add_enabled(false, egui::Button::new(i18n::m().proc_end_task));
             }
             ui.add_space(8.0);
             // View mode toggle
@@ -376,7 +377,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
             }
             ui.add(
                 egui::TextEdit::singleline(&mut state.filter)
-                    .hint_text("Filter by name or PID")
+                    .hint_text(i18n::m().proc_filter_hint)
                     .desired_width(200.0),
             );
         });
@@ -429,13 +430,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
                     .column(Column::initial(120.0).at_least(90.0))
                     .column(Column::remainder().at_least(70.0))
                     .header(26.0, |mut header| {
-                        header.col(|ui| { sortable_header(ui, "Name", SortKey::Name, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, "PID", SortKey::Pid, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, "User", SortKey::User, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, &format!("CPU  {:.0}%", total_cpu_used), SortKey::Cpu, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, &format!("Memory  {:.0}%", total_mem_used), SortKey::Mem, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, "Disk (R+W)", SortKey::Disk, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, "Status", SortKey::Status, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, i18n::m().proc_col_name, SortKey::Name, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, i18n::m().proc_col_pid, SortKey::Pid, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, i18n::m().proc_col_user, SortKey::User, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, &format!("{}  {:.0}%", i18n::m().proc_col_cpu, total_cpu_used), SortKey::Cpu, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, &format!("{}  {:.0}%", i18n::m().proc_col_mem, total_mem_used), SortKey::Mem, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, i18n::m().proc_col_disk, SortKey::Disk, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, i18n::m().proc_col_status, SortKey::Status, &mut state.sort, &mut state.descending); });
                     })
                     .body(|body| {
                         body.rows(row_height, visible_count, |mut row| {
@@ -471,8 +472,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
         }
 
         let mut visible: Vec<Row> = Vec::with_capacity(snap.processes.len() + 2);
-        append_section(&mut visible, "Apps", &apps, filter_active, &state.expanded);
-        append_section(&mut visible, "Background processes", &services, filter_active, &state.expanded);
+        append_section(&mut visible, i18n::m().proc_section_apps, &apps, filter_active, &state.expanded);
+        append_section(&mut visible, i18n::m().proc_section_bg, &services, filter_active, &state.expanded);
 
         egui::Frame::new()
             .fill(theme::panel_bg())
@@ -495,13 +496,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
                     .column(Column::initial(120.0).at_least(90.0))
                     .column(Column::remainder().at_least(70.0))
                     .header(26.0, |mut header| {
-                        header.col(|ui| { sortable_header(ui, "Name", SortKey::Name, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, "PID", SortKey::Pid, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, "User", SortKey::User, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, &format!("CPU  {:.0}%", total_cpu_used), SortKey::Cpu, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, &format!("Memory  {:.0}%", total_mem_used), SortKey::Mem, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, "Disk (R+W)", SortKey::Disk, &mut state.sort, &mut state.descending); });
-                        header.col(|ui| { sortable_header(ui, "Status", SortKey::Status, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, i18n::m().proc_col_name, SortKey::Name, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, i18n::m().proc_col_pid, SortKey::Pid, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, i18n::m().proc_col_user, SortKey::User, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, &format!("{}  {:.0}%", i18n::m().proc_col_cpu, total_cpu_used), SortKey::Cpu, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, &format!("{}  {:.0}%", i18n::m().proc_col_mem, total_mem_used), SortKey::Mem, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, i18n::m().proc_col_disk, SortKey::Disk, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, i18n::m().proc_col_status, SortKey::Status, &mut state.sort, &mut state.descending); });
                     })
                     .body(|body| {
                         let heights = visible.iter().map(|r| match r {
@@ -614,7 +615,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.label(
-            egui::RichText::new(format!("{total} processes"))
+            egui::RichText::new(i18n::m().proc_count.replace("{total}", &total.to_string()))
                 .color(theme::text_dim())
                 .small(),
         );
@@ -928,16 +929,16 @@ fn proc_context_menu(
     open_properties_pid: &mut Option<u32>,
 ) {
     ui.set_min_width(200.0);
-    if ui.button("End task").clicked() {
+    if ui.button(i18n::m().proc_end_task).clicked() {
         let _ = monitor::processes::terminate(p.pid);
         ui.close();
     }
-    if ui.button("Force kill").clicked() {
+    if ui.button(i18n::m().proc_force_kill).clicked() {
         let _ = monitor::processes::force_kill(p.pid);
         ui.close();
     }
     let is_stopped = matches!(p.status.as_str(), "Stop" | "Stopped");
-    let suspend_label = if is_stopped { "Resume" } else { "Suspend" };
+    let suspend_label = if is_stopped { i18n::m().ctx_resume } else { i18n::m().ctx_suspend };
     if ui.button(suspend_label).clicked() {
         if is_stopped {
             let _ = monitor::processes::resume(p.pid);
@@ -950,7 +951,7 @@ fn proc_context_menu(
     let exe_path = std::path::Path::new(&p.exe);
     let has_exe = !p.exe.is_empty() && exe_path.exists();
     if ui
-        .add_enabled(has_exe, egui::Button::new("Open file location"))
+        .add_enabled(has_exe, egui::Button::new(i18n::m().ctx_open_location))
         .clicked()
     {
         open_in_file_manager(&p.exe);
@@ -961,23 +962,23 @@ fn proc_context_menu(
         ui.close();
     }
     ui.separator();
-    if ui.button("Copy PID").clicked() {
+    if ui.button(i18n::m().ctx_copy_pid).clicked() {
         ui.ctx().copy_text(p.pid.to_string());
         ui.close();
     }
-    if ui.button("Copy name").clicked() {
+    if ui.button(i18n::m().ctx_copy_name).clicked() {
         ui.ctx().copy_text(p.name.clone());
         ui.close();
     }
     if ui
-        .add_enabled(!p.cmd.is_empty(), egui::Button::new("Copy command line"))
+        .add_enabled(!p.cmd.is_empty(), egui::Button::new(i18n::m().ctx_copy_cmd))
         .clicked()
     {
         ui.ctx().copy_text(p.cmd.clone());
         ui.close();
     }
     ui.separator();
-    if ui.button("Properties").clicked() {
+    if ui.button(i18n::m().ctx_properties).clicked() {
         *open_properties_pid = Some(p.pid);
         ui.close();
     }
@@ -991,13 +992,13 @@ fn group_context_menu(ui: &mut egui::Ui, g: &Group<'_>, open_properties_pid: &mu
     // Open file location).
     let main = g.procs.iter().min_by_key(|p| p.pid).copied();
 
-    if ui.button(format!("End all ({n})")).clicked() {
+    if ui.button(i18n::m().ctx_end_all.replace("{n}", &n.to_string())).clicked() {
         for p in &g.procs {
             let _ = monitor::processes::terminate(p.pid);
         }
         ui.close();
     }
-    if ui.button(format!("Force kill all ({n})")).clicked() {
+    if ui.button(i18n::m().ctx_force_kill_all.replace("{n}", &n.to_string())).clicked() {
         for p in &g.procs {
             let _ = monitor::processes::force_kill(p.pid);
         }
@@ -1008,9 +1009,9 @@ fn group_context_menu(ui: &mut egui::Ui, g: &Group<'_>, open_properties_pid: &mu
         .iter()
         .all(|p| matches!(p.status.as_str(), "Stop" | "Stopped"));
     let suspend_label = if all_stopped {
-        format!("Resume all ({n})")
+        i18n::m().ctx_resume_all.replace("{n}", &n.to_string())
     } else {
-        format!("Suspend all ({n})")
+        i18n::m().ctx_suspend_all.replace("{n}", &n.to_string())
     };
     if ui.button(suspend_label).clicked() {
         for p in &g.procs {
@@ -1027,7 +1028,7 @@ fn group_context_menu(ui: &mut egui::Ui, g: &Group<'_>, open_properties_pid: &mu
         let exe_path = std::path::Path::new(&p.exe);
         let has_exe = !p.exe.is_empty() && exe_path.exists();
         if ui
-            .add_enabled(has_exe, egui::Button::new("Open file location"))
+            .add_enabled(has_exe, egui::Button::new(i18n::m().ctx_open_location))
             .clicked()
         {
             open_in_file_manager(&p.exe);
@@ -1039,11 +1040,11 @@ fn group_context_menu(ui: &mut egui::Ui, g: &Group<'_>, open_properties_pid: &mu
         ui.close();
     }
     ui.separator();
-    if ui.button("Copy name").clicked() {
+    if ui.button(i18n::m().ctx_copy_name).clicked() {
         ui.ctx().copy_text(g.name.to_string());
         ui.close();
     }
-    if ui.button("Copy all PIDs").clicked() {
+    if ui.button(i18n::m().ctx_copy_all_pids).clicked() {
         let pids = g
             .procs
             .iter()
@@ -1055,7 +1056,7 @@ fn group_context_menu(ui: &mut egui::Ui, g: &Group<'_>, open_properties_pid: &mu
     }
     if let Some(p) = main {
         ui.separator();
-        if ui.button("Properties (main process)").clicked() {
+        if ui.button(i18n::m().ctx_properties_main).clicked() {
             *open_properties_pid = Some(p.pid);
             ui.close();
         }
