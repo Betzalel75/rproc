@@ -146,7 +146,6 @@ jobs:
              AppDir/io.github.trystan_sa.rproc.svg
           cp packaging/appimage/AppRun AppDir/AppRun
           chmod +x AppDir/AppRun
-          # GitHub Actions runners lack FUSE, so extract instead of running directly.
           curl -sSfL -o appimagetool \
             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
