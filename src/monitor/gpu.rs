@@ -30,14 +30,15 @@ pub struct GpuCollector {
 impl GpuCollector {
     pub fn init() -> Self {
         let nvml = Nvml::init().ok();
-        let (amd, intel) = scan_drm();
-        // The i915/xe PMU is system-wide (a single counter set for all engines).
-        // Open it once and attach it to the first Intel card; additional cards
-        // fall back to 0 % until per-card disambiguation is wired up.
-        let mut intel_pmus: Vec<Option<IntelPmu>> = intel.iter().map(|_| None).collect();
-        if !intel_pmus.is_empty() {
-            intel_pmus[0] = IntelPmu::open();
-        }
+        let (amd, mut intel) = scan_drm();
+        // Sort Intel cards by card number extracted from the drm path so
+        // card 0 gets the base PMU (i915/xe), card 1 gets i915.1/xe.1, etc.
+        intel.sort_by_key(|p| drm_card_index(p).unwrap_or(usize::MAX));
+        let intel_pmus: Vec<Option<IntelPmu>> = intel
+            .iter()
+            .enumerate()
+            .map(|(i, _)| IntelPmu::open_for_card(i))
+            .collect();
         Self {
             nvml,
             amd_cards: amd,
@@ -182,6 +183,16 @@ fn read_intel(device: &Path, pmu: Option<&mut IntelPmu>) -> GpuInfo {
     }
 }
 
+/// Extract the card index from a drm device path like
+/// `/sys/class/drm/card1/device`. Returns `None` if the path doesn't
+/// follow the expected pattern.
+fn drm_card_index(device: &Path) -> Option<usize> {
+    // Walk up: device → cardN → drm
+    let card_dir = device.parent()?;
+    let name = card_dir.file_name()?.to_str()?;
+    name.strip_prefix("card")?.parse().ok()
+}
+
 fn pci_model(device: &Path) -> Option<String> {
     // Try modalias / device / vendor id labels — fall back to drm card name.
     if let Ok(label) = fs::read_to_string(device.join("label")) {
@@ -232,8 +243,27 @@ struct IntelPmu {
 }
 
 impl IntelPmu {
-    fn open() -> Option<Self> {
-        let (pmu_type, config, cpu) = pmu_lookup("i915").or_else(|| pmu_lookup("xe"))?;
+    /// Open the PMU for a specific Intel GPU card.
+    ///
+    /// Card 0 first tries the unnumbered PMU names (`i915`, `xe`), then
+    /// falls back to `i915.0` / `xe.0`. Subsequent cards (1, 2, …) only
+    /// try the numbered variants (`i915.1`, `i915.2`, …). On multi-GPU
+    /// Intel systems (e.g. Arc dGPU + integrated), each card has its own
+    /// PMU instance registered by the kernel driver.
+    fn open_for_card(card_index: usize) -> Option<Self> {
+        if card_index == 0 {
+            if let Some(pmu) =
+                Self::open_named("i915").or_else(|| Self::open_named("xe"))
+            {
+                return Some(pmu);
+            }
+        }
+        Self::open_named(&format!("i915.{card_index}"))
+            .or_else(|| Self::open_named(&format!("xe.{card_index}")))
+    }
+
+    fn open_named(name: &str) -> Option<Self> {
+        let (pmu_type, config, cpu) = pmu_lookup(name)?;
         let attr = PerfEventAttr {
             type_: pmu_type,
             size: std::mem::size_of::<PerfEventAttr>() as u32,
@@ -260,13 +290,17 @@ impl IntelPmu {
         };
         if raw < 0 {
             // Most common cause is kernel.perf_event_paranoid > 2 without
-            // CAP_PERFMON. Print once at startup so users running unprivileged
-            // know what knob to turn.
-            let errno = std::io::Error::last_os_error();
-            eprintln!(
-                "rproc: Intel GPU utilization disabled (perf_event_open: {errno}). \
-                 Fix: `sudo setcap cap_perfmon=ep <binary>` or `sudo sysctl kernel.perf_event_paranoid=2`."
-            );
+            // CAP_PERFMON. Only log once (for card 0 or the first failure).
+            static LOGGED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                let errno = std::io::Error::last_os_error();
+                eprintln!(
+                    "rproc: Intel GPU utilization disabled (perf_event_open: {errno}). \
+                     Fix: `sudo setcap cap_perfmon=ep <binary>` or \
+                     `sudo sysctl kernel.perf_event_paranoid=2`."
+                );
+            }
             return None;
         }
         let fd = unsafe { OwnedFd::from_raw_fd(raw as c_int) };

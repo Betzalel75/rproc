@@ -10,6 +10,10 @@ use crate::ui::widgets;
 pub struct State {}
 
 pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
+    egui::ScrollArea::vertical()
+        .id_salt("settings_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
     ui.heading("Settings");
     ui.label(
         egui::RichText::new("Tweak how rproc samples and displays system data.")
@@ -256,6 +260,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
             },
         );
     });
+    }); // ScrollArea
 }
 
 fn preset_chip(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
