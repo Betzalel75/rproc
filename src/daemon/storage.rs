@@ -1,23 +1,24 @@
 //! On-disk ring-buffer for the background sampler.
 //!
-//! Layout (little-endian, total size = 20 + 60 * 304 = 18 260 bytes):
+//! Layout (little-endian, total size = 20 + 60 * 308 = 18 500 bytes):
 //!
 //! ```text
 //! Header (20 bytes)
 //!   [0..4]   magic = b"RPRC"
-//!   [4]      version = 2
+//!   [4]      version = 3
 //!   [5..8]   padding
 //!   [8..12]  capacity (u32)            — sample count, fixed at 60
 //!   [12..16] write_pos (u32)           — index of the next slot to write
 //!   [16..20] count (u32, ≤ capacity)   — number of valid samples
 //!
-//! Sample (304 bytes), each:
+//! Sample (308 bytes), each:
 //!   [0..8]    timestamp_secs (u64, unix epoch)
 //!   [8..12]   cpu_total (f32, %)
 //!   [12..16]  ram_used_pct (f32, %)
-//!   [16..144] 4 × NetSlot { name[24], rx_bps f32, tx_bps f32 }
-//!   [144..272] 4 × DiskSlot { name[24], read_bps f32, write_bps f32 }
-//!   [272..304] 4 × GpuSlot { util_pct f32, mem_pct f32 }
+//!   [16..20]  swap_used_pct (f32, %)
+//!   [20..148] 4 × NetSlot { name[24], rx_bps f32, tx_bps f32 }
+//!   [148..276] 4 × DiskSlot { name[24], read_bps f32, write_bps f32 }
+//!   [276..308] 4 × GpuSlot { util_pct f32, mem_pct f32 }
 //!
 //! Empty network/disk slots have a zero-filled name; empty GPU slots
 //! have NaN for both fields.
@@ -36,7 +37,7 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 const MAGIC: [u8; 4] = *b"RPRC";
-const VERSION: u8 = 2;
+const VERSION: u8 = 3;
 pub const CAPACITY: u32 = 60;
 const HEADER_SIZE: u64 = 20;
 
@@ -49,7 +50,7 @@ const DISK_SLOT_SIZE: usize = NAME_LEN + 4 + 4; // 32
 const GPU_SLOT_SIZE: usize = 4 + 4; // 8
 
 const SAMPLE_SIZE: u64 =
-    (8 + 4 + 4 + MAX_NETS * NET_SLOT_SIZE + MAX_DISKS * DISK_SLOT_SIZE + MAX_GPUS * GPU_SLOT_SIZE)
+    (8 + 4 + 4 + 4 + MAX_NETS * NET_SLOT_SIZE + MAX_DISKS * DISK_SLOT_SIZE + MAX_GPUS * GPU_SLOT_SIZE)
         as u64;
 const FILE_SIZE: u64 = HEADER_SIZE + SAMPLE_SIZE * CAPACITY as u64;
 
@@ -109,6 +110,7 @@ pub struct Sample {
     pub timestamp_secs: u64,
     pub cpu_total: f32,
     pub ram_used_pct: f32,
+    pub swap_used_pct: f32,
     pub nets: [NetSlot; MAX_NETS],
     pub disks: [DiskSlot; MAX_DISKS],
     pub gpus: [GpuSlot; MAX_GPUS],
@@ -142,6 +144,8 @@ impl Sample {
         b[o..o + 4].copy_from_slice(&self.cpu_total.to_le_bytes());
         o += 4;
         b[o..o + 4].copy_from_slice(&self.ram_used_pct.to_le_bytes());
+        o += 4;
+        b[o..o + 4].copy_from_slice(&self.swap_used_pct.to_le_bytes());
         o += 4;
         for n in &self.nets {
             b[o..o + NAME_LEN].copy_from_slice(&n.name);
@@ -177,6 +181,8 @@ impl Sample {
         s.cpu_total = f32::from_le_bytes(b[o..o + 4].try_into().unwrap());
         o += 4;
         s.ram_used_pct = f32::from_le_bytes(b[o..o + 4].try_into().unwrap());
+        o += 4;
+        s.swap_used_pct = f32::from_le_bytes(b[o..o + 4].try_into().unwrap());
         o += 4;
         for n in s.nets.iter_mut() {
             n.name.copy_from_slice(&b[o..o + NAME_LEN]);

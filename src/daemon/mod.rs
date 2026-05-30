@@ -117,6 +117,7 @@ pub fn run() -> anyhow::Result<()> {
             timestamp_secs: timestamp,
             cpu_total: summary.cpu_total,
             ram_used_pct: summary.ram_used_pct,
+            swap_used_pct: summary.swap_used_pct,
             nets: net_slots,
             disks: disk_slots,
             gpus: gpu_slots,

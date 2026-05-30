@@ -21,6 +21,7 @@ pub struct SystemSummary {
     pub ram_used_pct: f32,
     pub swap_total: u64,
     pub swap_used: u64,
+    pub swap_used_pct: f32,
     pub net_rx_bps: f64,
     pub net_tx_bps: f64,
     pub disks: Vec<DiskInfo>,
@@ -213,6 +214,13 @@ impl SystemSummary {
         } else {
             0.0
         };
+        let swap_total = sys.total_swap();
+        let swap_used = sys.used_swap();
+        let swap_pct = if swap_total > 0 {
+            (swap_used as f32 / swap_total as f32) * 100.0
+        } else {
+            0.0
+        };
 
         let mut net_rx = 0.0;
         let mut net_tx = 0.0;
@@ -296,8 +304,9 @@ impl SystemSummary {
             ram_total,
             ram_used,
             ram_used_pct: ram_pct,
-            swap_total: sys.total_swap(),
-            swap_used: sys.used_swap(),
+            swap_total,
+            swap_used,
+            swap_used_pct: swap_pct,
             net_rx_bps: net_rx,
             net_tx_bps: net_tx,
             disks: disk_list,

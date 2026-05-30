@@ -541,9 +541,28 @@ fn panel_memory(ui: &mut egui::Ui, snap: &Snapshot) {
         widgets::stat(
             ui,
             "Swap used",
-            &widgets::format_bytes(snap.system.swap_used),
+            &format!(
+                "{} ({:.0}%)",
+                widgets::format_bytes(snap.system.swap_used),
+                snap.system.swap_used_pct
+            ),
         );
     });
+
+    if snap.system.swap_total > 0 {
+        ui.add_space(8.0);
+        widgets::card(ui, |ui| {
+            ui.label("Swap usage (last 60s)");
+            widgets::big_plot(
+                ui,
+                "swap_plot",
+                &[("swap", &snap.history.swap_used_pct, theme::graph_net())],
+                100.0,
+                140.0,
+                snap.sample_interval_ms,
+            );
+        });
+    }
 }
 
 fn panel_disk(ui: &mut egui::Ui, snap: &Snapshot, idx: usize) {

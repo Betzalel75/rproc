@@ -33,6 +33,7 @@ pub struct History {
     pub cpu_total: VecDeque<f32>,
     pub per_core_cpu: Vec<VecDeque<f32>>,
     pub ram_used_pct: VecDeque<f32>,
+    pub swap_used_pct: VecDeque<f32>,
     /// Per-interface throughput history, keyed by interface name
     /// (e.g. `wlp4s0`, `enp0s31f6`).
     pub net_rx_bps: HashMap<String, VecDeque<f64>>,
@@ -200,6 +201,11 @@ fn sampler_loop(
             summary.ram_used_pct,
             HISTORY_LEN,
         );
+        push_capped(
+            &mut working.history.swap_used_pct,
+            summary.swap_used_pct,
+            HISTORY_LEN,
+        );
         let mut net_present: HashSet<String> = HashSet::with_capacity(summary.nets.len());
         for n in &summary.nets {
             net_present.insert(n.name.clone());
@@ -334,6 +340,7 @@ fn prefill_history(history: &mut History, samples: &[crate::daemon::storage::Sam
     for s in samples {
         push_capped(&mut history.cpu_total, s.cpu_total, HISTORY_LEN);
         push_capped(&mut history.ram_used_pct, s.ram_used_pct, HISTORY_LEN);
+        push_capped(&mut history.swap_used_pct, s.swap_used_pct, HISTORY_LEN);
 
         for slot in &s.nets {
             let name = name_from_bytes(&slot.name);
