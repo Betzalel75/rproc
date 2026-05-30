@@ -62,13 +62,11 @@ APPIMAGE_TOOL ?= build/appimagetool-x86_64.AppImage
 
 appimage: target/release/rproc
 	@mkdir -p build/appimage/AppDir/usr/bin
-	@mkdir -p build/appimage/AppDir/usr/share/applications
-	@mkdir -p build/appimage/AppDir/usr/share/icons/hicolor/scalable/apps
 	cp target/release/rproc build/appimage/AppDir/usr/bin/
 	cp packaging/io.github.trystan_sa.rproc.desktop \
-	   build/appimage/AppDir/usr/share/applications/
+	   build/appimage/AppDir/
 	cp packaging/icons/hicolor/scalable/apps/$(APP_ID).svg \
-	   build/appimage/AppDir/usr/share/icons/hicolor/scalable/apps/
+	   build/appimage/AppDir/$(APP_ID).svg
 	cp packaging/appimage/AppRun build/appimage/AppDir/AppRun
 	chmod +x build/appimage/AppDir/AppRun
 	@test -f $(APPIMAGE_TOOL) || { \

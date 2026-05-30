@@ -140,18 +140,18 @@ jobs:
       - name: Build AppImage
         run: |
           mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/share/applications
-          mkdir -p AppDir/usr/share/icons/hicolor/scalable/apps
           cp target/release/rproc AppDir/usr/bin/
-          cp packaging/io.github.trystan_sa.rproc.desktop AppDir/usr/share/applications/
+          cp packaging/io.github.trystan_sa.rproc.desktop AppDir/
           cp packaging/icons/hicolor/scalable/apps/io.github.trystan_sa.rproc.svg \
-             AppDir/usr/share/icons/hicolor/scalable/apps/
+             AppDir/io.github.trystan_sa.rproc.svg
           cp packaging/appimage/AppRun AppDir/AppRun
           chmod +x AppDir/AppRun
+          # GitHub Actions runners lack FUSE, so extract instead of running directly.
           curl -sSfL -o appimagetool \
             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
-          ./appimagetool AppDir rproc-${{ github.ref_name }}-x86_64.AppImage
+          ./appimagetool --appimage-extract
+          ./squashfs-root/AppRun AppDir rproc-${{ github.ref_name }}-x86_64.AppImage
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
