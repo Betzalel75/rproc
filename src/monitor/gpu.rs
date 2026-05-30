@@ -25,12 +25,13 @@ pub struct GpuCollector {
     amd_cards: Vec<PathBuf>,
     intel_cards: Vec<PathBuf>,
     intel_pmus: Vec<Option<IntelPmu>>,
+    arm_cards: Vec<PathBuf>,
 }
 
 impl GpuCollector {
     pub fn init() -> Self {
         let nvml = Nvml::init().ok();
-        let (amd, mut intel) = scan_drm();
+        let (amd, mut intel, arm) = scan_drm();
         // Sort Intel cards by card number extracted from the drm path so
         // card 0 gets the base PMU (i915/xe), card 1 gets i915.1/xe.1, etc.
         intel.sort_by_key(|p| drm_card_index(p).unwrap_or(usize::MAX));
@@ -44,6 +45,7 @@ impl GpuCollector {
             amd_cards: amd,
             intel_cards: intel,
             intel_pmus,
+            arm_cards: arm,
         }
     }
 
@@ -65,15 +67,19 @@ impl GpuCollector {
         for (p, pmu) in self.intel_cards.iter().zip(self.intel_pmus.iter_mut()) {
             out.push(read_intel(p, pmu.as_mut()));
         }
+        for p in &self.arm_cards {
+            out.push(read_arm(p));
+        }
         out
     }
 }
 
-fn scan_drm() -> (Vec<PathBuf>, Vec<PathBuf>) {
+fn scan_drm() -> (Vec<PathBuf>, Vec<PathBuf>, Vec<PathBuf>) {
     let mut amd = Vec::new();
     let mut intel = Vec::new();
+    let mut arm = Vec::new();
     let Ok(rd) = fs::read_dir("/sys/class/drm") else {
-        return (amd, intel);
+        return (amd, intel, arm);
     };
     for entry in rd.flatten() {
         let name = entry.file_name();
@@ -86,10 +92,31 @@ fn scan_drm() -> (Vec<PathBuf>, Vec<PathBuf>) {
         match vendor.trim() {
             "0x1002" => amd.push(device),
             "0x8086" => intel.push(device),
-            _ => {}
+            _ => {
+                // Only keep non-AMD/non-Intel cards that use a known ARM
+                // GPU driver — otherwise virtual GPUs (virtio-gpu, qxl,
+                // vmwgfx) and display-only controllers are miscategorised
+                // as ARM GPUs and show up at 0 % utilisation.
+                if let Some(drv) = driver_name(&device)
+                    && is_arm_driver(&drv)
+                {
+                    arm.push(device);
+                }
+            }
         }
     }
-    (amd, intel)
+    (amd, intel, arm)
+}
+
+/// Known ARM GPU kernel drivers. Anything not in this list is a virtual
+/// GPU, a software renderer, or a display controller — not a real ARM GPU.
+fn is_arm_driver(name: &str) -> bool {
+    matches!(
+        name,
+        "panfrost" | "lima" | "freedreno" | "msm"
+            | "vc4" | "v3d" | "etnaviv" | "pvr"
+            | "tegra" | "host1x"
+    )
 }
 
 fn read_nvml(dev: &nvml_wrapper::Device, driver: &str) -> GpuInfo {
@@ -180,6 +207,87 @@ fn read_intel(device: &Path, pmu: Option<&mut IntelPmu>) -> GpuInfo {
         clock_mhz: cur_freq,
         mem_clock_mhz: 0,
         driver: "i915/xe".into(),
+    }
+}
+
+fn read_arm(device: &Path) -> GpuInfo {
+    let util = read_file_f32(&device.join("gpu_busy_percent"))
+        .or_else(|| read_file_f32(&device.join("utilisation")))
+        .unwrap_or(0.0);
+    let mem_used = read_file_u64(&device.join("mem_info_vram_used")).unwrap_or(0);
+    let mem_total = read_file_u64(&device.join("mem_info_vram_total")).unwrap_or(0);
+
+    let mut temp_c = 0.0;
+    if let Ok(rd) = fs::read_dir(device.join("hwmon")) {
+        for entry in rd.flatten() {
+            if let Some(v) = read_file_f32(&entry.path().join("temp1_input")) {
+                temp_c = v / 1000.0;
+                break;
+            }
+        }
+    }
+
+    // Frequency: try devfreq (common on ARM SoCs), then gt_act_freq_mhz.
+    let cur_freq = devfreq_cur_freq(device)
+        .or_else(|| read_file_u64(&device.join("gt_act_freq_mhz")))
+        .unwrap_or(0) as u32;
+
+    // Resolve the kernel driver name to a vendor label.
+    let driver = driver_name(device).unwrap_or_else(|| "unknown".into());
+    let (vendor, driver_label) = arm_vendor(&driver);
+
+    let name = pci_model(device).unwrap_or_else(|| format!("{vendor} GPU"));
+
+    GpuInfo {
+        vendor: vendor.into(),
+        name,
+        util_pct: util,
+        mem_used,
+        mem_total,
+        temp_c,
+        power_w: 0.0,
+        clock_mhz: cur_freq,
+        mem_clock_mhz: 0,
+        driver: driver_label.into(),
+    }
+}
+
+/// Read the current frequency from a devfreq governor under `device/`.
+/// Typical path: `.../device/devfreq/<governor>/cur_freq` (value in Hz).
+fn devfreq_cur_freq(device: &Path) -> Option<u64> {
+    let df = device.join("devfreq");
+    let Ok(rd) = fs::read_dir(&df) else {
+        return None;
+    };
+    for entry in rd.flatten() {
+        if let Some(hz) = read_file_u64(&entry.path().join("cur_freq"))
+            && hz > 0
+        {
+            return Some(hz / 1_000_000); // Hz → MHz
+        }
+    }
+    None
+}
+
+/// Resolve the kernel driver name from the `device/driver` symlink.
+fn driver_name(device: &Path) -> Option<String> {
+    let link = fs::read_link(device.join("driver")).ok()?;
+    link.file_name()?.to_str().map(str::to_string)
+}
+
+/// Map a kernel GPU driver to a human-readable vendor + driver label.
+fn arm_vendor(driver: &str) -> (&'static str, &'static str) {
+    match driver {
+        "panfrost" => ("ARM Mali", "panfrost"),
+        "lima" => ("ARM Mali", "lima"),
+        "freedreno" => ("Qualcomm Adreno", "freedreno"),
+        "msm" => ("Qualcomm Adreno", "msm"),
+        "vc4" => ("Broadcom VideoCore", "vc4"),
+        "v3d" => ("Broadcom VideoCore", "v3d"),
+        "etnaviv" => ("Vivante", "etnaviv"),
+        "pvr" => ("Imagination PowerVR", "pvr"),
+        "tegra" | "host1x" => ("NVIDIA Tegra", "tegra"),
+        _ => ("ARM GPU", "unknown"),
     }
 }
 
