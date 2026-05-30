@@ -1,4 +1,7 @@
+use std::sync::atomic::Ordering;
+
 use crate::daemon;
+use crate::monitor::notify;
 use crate::settings::{MAX_REFRESH_MS, MIN_REFRESH_MS, REFRESH_PRESETS, Settings};
 use crate::theme::{self, Theme};
 use crate::ui::widgets;
@@ -120,6 +123,85 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
             ("Background sampler off", theme::text_dim())
         };
         ui.label(egui::RichText::new(status).color(color).strong());
+    });
+
+    ui.add_space(12.0);
+
+    // --- Notification thresholds --------------------------------------------
+    widgets::card(ui, |ui| {
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("Notifications")
+                    .strong()
+                    .size(15.0),
+            );
+            ui.label(
+                egui::RichText::new(
+                    "Get a desktop notification when CPU or RAM usage exceeds a \
+                     threshold. Set a value to 0% to disable alerts for that metric. \
+                     Notifications respect a cooldown to avoid spam.",
+                )
+                .color(theme::text_dim())
+                .small(),
+            );
+        });
+        ui.add_space(10.0);
+
+        let thresh = settings.thresholds();
+
+        // CPU threshold
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("CPU threshold").strong());
+            ui.add_space(20.0);
+            let mut cpu = thresh.cpu_pct.load(Ordering::Relaxed);
+            if ui
+                .add(
+                    egui::Slider::new(&mut cpu, 0..=100)
+                        .suffix("%")
+                        .text_color(theme::graph_cpu()),
+                )
+                .changed()
+            {
+                thresh.cpu_pct.store(cpu, Ordering::Relaxed);
+                settings.save_external();
+            }
+        });
+
+        // RAM threshold
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("RAM threshold").strong());
+            ui.add_space(18.0);
+            let mut ram = thresh.ram_pct.load(Ordering::Relaxed);
+            if ui
+                .add(
+                    egui::Slider::new(&mut ram, 0..=100)
+                        .suffix("%")
+                        .text_color(theme::graph_ram()),
+                )
+                .changed()
+            {
+                thresh.ram_pct.store(ram, Ordering::Relaxed);
+                settings.save_external();
+            }
+        });
+
+        // Cooldown
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Cooldown").strong());
+            ui.add_space(44.0);
+            let mut cooldown = thresh.cooldown_secs.load(Ordering::Relaxed);
+            if ui
+                .add(
+                    egui::Slider::new(&mut cooldown, notify::MIN_COOLDOWN_SECS..=3600)
+                        .suffix(" s")
+                        .logarithmic(true),
+                )
+                .changed()
+            {
+                thresh.cooldown_secs.store(cooldown, Ordering::Relaxed);
+                settings.save_external();
+            }
+        });
     });
 
     ui.add_space(12.0);

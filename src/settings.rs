@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
+use crate::monitor::notify::{self, Thresholds};
 use crate::theme::{self, Theme};
 
 /// Shared, lock-free settings handle. Cloning is cheap (just an Arc bump);
@@ -17,6 +18,8 @@ pub struct Settings {
     /// 0 = dark, 1 = light. Stored as u8 so the AtomicU8 can be shared
     /// lock-free between the UI thread and the settings persistence path.
     theme: Arc<AtomicU8>,
+    /// Notification thresholds shared with the sampler thread.
+    thresholds: Thresholds,
 }
 
 impl Default for Settings {
@@ -25,6 +28,7 @@ impl Default for Settings {
             refresh_ms: Arc::new(AtomicU64::new(DEFAULT_REFRESH_MS)),
             daemon_enabled: Arc::new(AtomicBool::new(true)),
             theme: Arc::new(AtomicU8::new(2)), // system
+            thresholds: Thresholds::default(),
         }
     }
 }
@@ -69,6 +73,21 @@ impl Settings {
                     let t = Theme::from_str(value.trim()).unwrap_or(Theme::Dark);
                     settings.theme.store(t as u8, Ordering::Relaxed);
                 }
+                "notify_cpu" => {
+                    if let Ok(v) = value.trim().parse::<u8>() {
+                        settings.thresholds.cpu_pct.store(v.min(100), Ordering::Relaxed);
+                    }
+                }
+                "notify_ram" => {
+                    if let Ok(v) = value.trim().parse::<u8>() {
+                        settings.thresholds.ram_pct.store(v.min(100), Ordering::Relaxed);
+                    }
+                }
+                "notify_cooldown" => {
+                    if let Ok(v) = value.trim().parse::<u64>() {
+                        settings.thresholds.cooldown_secs.store(v.max(notify::MIN_COOLDOWN_SECS), Ordering::Relaxed);
+                    }
+                }
                 _ => {}
             }
         }
@@ -98,7 +117,7 @@ impl Settings {
     /// caller is responsible for actually spawning/stopping the daemon.
     pub fn set_daemon_enabled(&self, enabled: bool) {
         self.daemon_enabled.store(enabled, Ordering::Relaxed);
-        self.save();
+        self.save_external();
     }
 
     pub fn theme(&self) -> Theme {
@@ -112,18 +131,29 @@ impl Settings {
     pub fn set_theme(&self, t: Theme) {
         self.theme.store(t as u8, Ordering::Relaxed);
         theme::set_theme(t);
-        self.save();
+        self.save_external();
+    }
+
+    /// Returns the notification thresholds handle — cheap Arc clone for the
+    /// sampler thread.
+    pub fn thresholds(&self) -> Thresholds {
+        self.thresholds.clone()
     }
 
     /// Persist the current settings to disk. Best-effort: any failure is
-    /// logged to stderr but never propagates.
-    fn save(&self) {
+    /// logged to stderr but never propagates. Public so the settings UI can
+    /// trigger a save when individual threshold sliders change.
+    pub fn save_external(&self) {
         let Ok(path) = config_path() else {
             return;
         };
         let theme_str = self.theme().as_str();
+        let cpu = self.thresholds.cpu_pct.load(Ordering::Relaxed);
+        let ram = self.thresholds.ram_pct.load(Ordering::Relaxed);
+        let cooldown = self.thresholds.cooldown_secs.load(Ordering::Relaxed);
         let body = format!(
-            "daemon_enabled={}\ntheme={theme_str}\n",
+            "daemon_enabled={}\ntheme={theme_str}\n\
+             notify_cpu={cpu}\nnotify_ram={ram}\nnotify_cooldown={cooldown}\n",
             self.daemon_enabled.load(Ordering::Relaxed),
         );
         if let Err(e) = std::fs::write(&path, body) {

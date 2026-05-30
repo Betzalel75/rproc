@@ -9,7 +9,7 @@ use sysinfo::{
     Users,
 };
 
-use super::{gpu, processes, system};
+use super::{gpu, notify, processes, system};
 use crate::settings::{MAX_REFRESH_MS, MIN_REFRESH_MS};
 
 const HISTORY_LEN: usize = 60;
@@ -59,7 +59,7 @@ pub struct Sampler {
 }
 
 impl Sampler {
-    pub fn start(refresh_ms: Arc<AtomicU64>) -> Self {
+    pub fn start(refresh_ms: Arc<AtomicU64>, thresholds: notify::Thresholds) -> Self {
         // Default off: the app opens on Performance, so the process table stays
         // empty until the user first visits the Processes tab.
         let processes_active = Arc::new(AtomicBool::new(false));
@@ -81,7 +81,7 @@ impl Sampler {
         let active_t = processes_active.clone();
         thread::Builder::new()
             .name("rproc-sampler".into())
-            .spawn(move || sampler_loop(inner_t, refresh_ms, active_t))
+            .spawn(move || sampler_loop(inner_t, refresh_ms, active_t, thresholds))
             .expect("spawn sampler");
         Self {
             inner,
@@ -105,6 +105,7 @@ fn sampler_loop(
     out: Arc<Mutex<Arc<Snapshot>>>,
     refresh_ms: Arc<AtomicU64>,
     processes_active: Arc<AtomicBool>,
+    thresholds: notify::Thresholds,
 ) {
     // `System::new()` + a CPU refresh avoids `new_all()`'s upfront scan of
     // every PID's cmdline/exe/environ. The loop below repopulates the process
@@ -118,6 +119,7 @@ fn sampler_loop(
     let mut components = Components::new_with_refreshed_list();
     let mut users = Users::new_with_refreshed_list();
     let mut gpu_collector = gpu::GpuCollector::init();
+    let mut watcher = notify::Watcher::new(thresholds);
 
     // Start from whatever's been published (the prefill from disk) so we
     // don't drop the history we just loaded. After this point the working
@@ -173,6 +175,10 @@ fn sampler_loop(
 
         let summary = system::SystemSummary::collect(&sys, &nets, &disks, &components, delta_secs);
         let gpus = gpu_collector.sample();
+
+        // Check thresholds after the summary is fresh — the watcher may fire
+        // a desktop notification if CPU or RAM exceeds the configured limits.
+        watcher.check(summary.cpu_total, summary.ram_used_pct);
 
         push_capped(
             &mut working.history.cpu_total,

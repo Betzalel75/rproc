@@ -1,4 +1,5 @@
 pub mod gpu;
+pub mod notify;
 pub mod processes;
 pub mod sampler;
 pub mod services;
