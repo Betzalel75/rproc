@@ -1,0 +1,9 @@
+#!/bin/sh
+# AppRun entry point for the rproc AppImage.
+# Sets up the library path so bundled libs are found before system ones.
+
+HERE="$(dirname "$(readlink -f "$0")")"
+export PATH="${HERE}/usr/bin:${PATH}"
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+
+exec "${HERE}/usr/bin/rproc" "$@"

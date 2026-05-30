@@ -121,6 +121,44 @@ jobs:
           name: rproc-rpm
           path: target/generate-rpm/*.rpm
 
+  build-appimage:
+    needs: build-binary
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download prebuilt binary
+        uses: actions/download-artifact@v4
+        with:
+          name: rproc-binary
+          path: target/release
+
+      - name: Restore binary permissions
+        run: chmod +x target/release/rproc
+
+      - name: Build AppImage
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/scalable/apps
+          cp target/release/rproc AppDir/usr/bin/
+          cp packaging/io.github.trystan_sa.rproc.desktop AppDir/usr/share/applications/
+          cp packaging/icons/hicolor/scalable/apps/io.github.trystan_sa.rproc.svg \
+             AppDir/usr/share/icons/hicolor/scalable/apps/
+          cp packaging/appimage/AppRun AppDir/AppRun
+          chmod +x AppDir/AppRun
+          curl -sSfL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ./appimagetool AppDir rproc-${{ github.ref_name }}-x86_64.AppImage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: rproc-appimage
+          path: rproc-*.AppImage
+
   build-flatpak:
     runs-on: ubuntu-latest
     container:
@@ -146,9 +184,9 @@ jobs:
           cache-key: flatpak-builder-${{ github.sha }}
 
   release:
-    needs: [build-binary, build-deb, build-rpm, build-flatpak]
+    needs: [build-binary, build-deb, build-rpm, build-appimage, build-flatpak]
     # Publish whatever built. The binary is required; the .deb / .rpm /
-    # .flatpak jobs are best-effort, so a single failure (e.g. flatpak)
+    # .AppImage / .flatpak jobs are best-effort, so a single failure
     # never blocks the release of the others.
     if: ${{ always() && needs.build-binary.result == 'success' }}
     runs-on: ubuntu-latest
