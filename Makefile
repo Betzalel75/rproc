@@ -1,7 +1,7 @@
 VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 APP_ID  := io.github.trystan_sa.rproc
 
-.PHONY: help flatpak flatpak-install deb rpm appimage clean release
+.PHONY: help flatpak flatpak-install deb rpm appimage appimage-install clean release
 
 help:
 	@echo "rproc packaging targets:"
@@ -9,7 +9,8 @@ help:
 	@echo "  make flatpak-install build + install for the current user"
 	@echo "  make deb             build a .deb (target/debian/)"
 	@echo "  make rpm             build an .rpm (target/generate-rpm/)"
-	@echo "  make appimage        build an .AppImage (build/rproc-*.AppImage)"
+	@echo "  make appimage        build an .AppImage (rproc-*.AppImage)"
+	@echo "  make appimage-install build + install locally (~/.local/)"
 	@echo "  make release         interactive: bump version, tag, push -> CI publishes release"
 	@echo "  make clean           remove build artefacts"
 
@@ -78,6 +79,14 @@ appimage: target/release/rproc
 	cd build/appimage && ../../$(APPIMAGE_TOOL) AppDir \
 		../../rproc-$(VERSION)-x86_64.AppImage
 	@echo "==> rproc-$(VERSION)-x86_64.AppImage"
+
+# --- Install AppImage locally ----------------------------------------------
+
+appimage-install: appimage
+	@bash scripts/install-appimage.sh \
+		rproc-$(VERSION)-x86_64.AppImage \
+		packaging/$(APP_ID).desktop \
+		packaging/icons/hicolor/scalable/apps/$(APP_ID).svg
 
 target/release/rproc:
 	cargo build --release --locked
