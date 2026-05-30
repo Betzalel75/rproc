@@ -20,6 +20,9 @@ fn main() -> anyhow::Result<()> {
     // before deciding whether to spawn the background sampler.
     let settings = settings::Settings::load();
 
+    // Initialise the global theme palette before the first frame.
+    theme::init(settings.theme());
+
     // Make sure a background sampler is running so this launch (and the
     // next one) sees fresh history. No-op if one is already alive, and
     // skipped entirely when the user has disabled the daemon.

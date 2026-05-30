@@ -53,12 +53,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
         egui::RichText::new(
             "Sorted by boot time (descending). Units managed by systemd dependencies are protected and cannot be disabled.",
         )
-        .color(theme::TEXT_DIM),
+        .color(theme::text_dim()),
     );
     ui.add_space(10.0);
 
     if let Some(err) = &state.last_error {
-        ui.colored_label(theme::ERR, err);
+        ui.colored_label(theme::err(), err);
         ui.add_space(8.0);
     }
 
@@ -98,7 +98,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
         if !normal_idx.is_empty() {
             ui.label(
                 egui::RichText::new("Startup apps & services")
-                    .color(theme::TEXT)
+                    .color(theme::text())
                     .strong(),
             );
             ui.add_space(6.0);
@@ -120,7 +120,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
         if !critical_idx.is_empty() {
             ui.label(
                 egui::RichText::new("Protected by systemd")
-                    .color(theme::WARN)
+                    .color(theme::warn())
                     .strong(),
             );
             ui.label(
@@ -128,7 +128,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
                     "These services are pulled in by dependency (state: static/generated/alias). \
                      `systemctl disable` has no effect on them; they are managed by other units.",
                 )
-                .color(theme::TEXT_DIM)
+                .color(theme::text_dim())
                 .small(),
             );
             ui.add_space(6.0);
@@ -176,7 +176,7 @@ fn render_row(
     locked: bool,
 ) {
     let card = egui::Frame::new()
-        .fill(theme::CARD_BG)
+        .fill(theme::card_bg())
         .inner_margin(egui::Margin::same(10))
         .corner_radius(egui::CornerRadius::same(8))
         .show(ui, |ui| {
@@ -197,13 +197,13 @@ fn render_row(
                         );
                         ui.label(
                             egui::RichText::new(scope_badge(&e.source))
-                                .color(theme::TEXT_DIM)
+                                .color(theme::text_dim())
                                 .small(),
                         );
                         if locked {
                             ui.label(
                                 egui::RichText::new("protected")
-                                    .color(theme::WARN)
+                                    .color(theme::warn())
                                     .small()
                                     .strong(),
                             );
@@ -212,13 +212,13 @@ fn render_row(
                     if !e.comment.is_empty() {
                         ui.label(
                             egui::RichText::new(&e.comment)
-                                .color(theme::TEXT_DIM)
+                                .color(theme::text_dim())
                                 .small(),
                         );
                     }
                     ui.label(
                         egui::RichText::new(&e.exec)
-                            .color(theme::TEXT_DIM)
+                            .color(theme::text_dim())
                             .monospace()
                             .small(),
                     );
@@ -242,9 +242,9 @@ fn render_row(
                         egui::RichText::new(format_boot_time(e.boot_time_ms))
                             .monospace()
                             .color(if e.boot_time_ms.is_some() {
-                                theme::TEXT
+                                theme::text()
                             } else {
-                                theme::TEXT_DIM
+                                theme::text_dim()
                             }),
                     );
                 });
@@ -394,7 +394,7 @@ fn render_startup_properties_window(
                 );
                 ui.add_space(4.0);
                 if !e.exec.is_empty() {
-                    ui.label(egui::RichText::new("Exec").color(theme::TEXT_DIM));
+                    ui.label(egui::RichText::new("Exec").color(theme::text_dim()));
                     ui.add(egui::Label::new(&e.exec).wrap());
                     ui.add_space(4.0);
                 }
@@ -430,7 +430,7 @@ fn render_startup_properties_window(
                     ui.add_space(4.0);
                 }
                 if !props.drop_in_paths.is_empty() {
-                    ui.label(egui::RichText::new("Drop-in files").color(theme::TEXT_DIM));
+                    ui.label(egui::RichText::new("Drop-in files").color(theme::text_dim()));
                     for p in &props.drop_in_paths {
                         widgets::path_field_compact(ui, p);
                     }
@@ -446,7 +446,7 @@ fn render_startup_properties_window(
                     ui.add_space(4.0);
                 }
                 if !props.exec_start.is_empty() {
-                    ui.label(egui::RichText::new("ExecStart").color(theme::TEXT_DIM));
+                    ui.label(egui::RichText::new("ExecStart").color(theme::text_dim()));
                     ui.add(egui::Label::new(&props.exec_start).wrap());
                 }
             }

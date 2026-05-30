@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+
+use crate::theme::{self, Theme};
 
 /// Shared, lock-free settings handle. Cloning is cheap (just an Arc bump);
 /// the sampler thread keeps one clone and reads it each tick, the UI thread
@@ -12,6 +14,9 @@ pub struct Settings {
     /// should run. Persisted so the choice survives restarts — otherwise the
     /// GUI would respawn the daemon on every launch regardless.
     daemon_enabled: Arc<AtomicBool>,
+    /// 0 = dark, 1 = light. Stored as u8 so the AtomicU8 can be shared
+    /// lock-free between the UI thread and the settings persistence path.
+    theme: Arc<AtomicU8>,
 }
 
 impl Default for Settings {
@@ -19,6 +24,7 @@ impl Default for Settings {
         Self {
             refresh_ms: Arc::new(AtomicU64::new(DEFAULT_REFRESH_MS)),
             daemon_enabled: Arc::new(AtomicBool::new(true)),
+            theme: Arc::new(AtomicU8::new(2)), // system
         }
     }
 }
@@ -53,10 +59,17 @@ impl Settings {
             let Some((key, value)) = line.split_once('=') else {
                 continue;
             };
-            if key.trim() == "daemon_enabled" {
-                settings
-                    .daemon_enabled
-                    .store(matches!(value.trim(), "true" | "1"), Ordering::Relaxed);
+            match key.trim() {
+                "daemon_enabled" => {
+                    settings
+                        .daemon_enabled
+                        .store(matches!(value.trim(), "true" | "1"), Ordering::Relaxed);
+                }
+                "theme" => {
+                    let t = Theme::from_str(value.trim()).unwrap_or(Theme::Dark);
+                    settings.theme.store(t as u8, Ordering::Relaxed);
+                }
+                _ => {}
             }
         }
         settings
@@ -88,15 +101,30 @@ impl Settings {
         self.save();
     }
 
+    pub fn theme(&self) -> Theme {
+        match self.theme.load(Ordering::Relaxed) {
+            0 => Theme::Dark,
+            1 => Theme::Light,
+            _ => Theme::System,
+        }
+    }
+
+    pub fn set_theme(&self, t: Theme) {
+        self.theme.store(t as u8, Ordering::Relaxed);
+        theme::set_theme(t);
+        self.save();
+    }
+
     /// Persist the current settings to disk. Best-effort: any failure is
     /// logged to stderr but never propagates.
     fn save(&self) {
         let Ok(path) = config_path() else {
             return;
         };
+        let theme_str = self.theme().as_str();
         let body = format!(
-            "daemon_enabled={}\n",
-            self.daemon_enabled.load(Ordering::Relaxed)
+            "daemon_enabled={}\ntheme={theme_str}\n",
+            self.daemon_enabled.load(Ordering::Relaxed),
         );
         if let Err(e) = std::fs::write(&path, body) {
             eprintln!("rproc: failed to save settings: {e}");

@@ -53,9 +53,9 @@ fn side_button(
             egui::vec2(3.0, rect.height() - 16.0),
         );
         ui.painter()
-            .rect_filled(bar, egui::CornerRadius::same(2), theme::ACCENT);
+            .rect_filled(bar, egui::CornerRadius::same(2), theme::accent());
     }
-    let fg = if selected { theme::ACCENT } else { theme::TEXT };
+    let fg = if selected { theme::accent() } else { theme::text() };
 
     // In compact mode the icon is centered in the strip and the label is
     // surfaced through hover. Otherwise icon sits at x=14 with the label next
@@ -194,5 +194,5 @@ fn paint_icon(painter: &egui::Painter, tab: Tab, rect: egui::Rect, color: egui::
 /// space" hole through painted shapes (used by the Services power icon to
 /// hide the top of the ring under the vertical mark).
 fn ui_color_match(_painter: &egui::Painter) -> egui::Color32 {
-    theme::SIDEBAR_BG
+    theme::sidebar_bg()
 }

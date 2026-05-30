@@ -1,6 +1,6 @@
 use crate::daemon;
 use crate::settings::{MAX_REFRESH_MS, MIN_REFRESH_MS, REFRESH_PRESETS, Settings};
-use crate::theme;
+use crate::theme::{self, Theme};
 use crate::ui::widgets;
 
 #[derive(Default)]
@@ -10,7 +10,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
     ui.heading("Settings");
     ui.label(
         egui::RichText::new("Tweak how rproc samples and displays system data.")
-            .color(theme::TEXT_DIM),
+            .color(theme::text_dim()),
     );
     ui.add_space(16.0);
 
@@ -23,7 +23,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
                         "How often the sampler thread polls the system. \
                          Lower intervals feel snappier but use more CPU.",
                     )
-                    .color(theme::TEXT_DIM)
+                    .color(theme::text_dim())
                     .small(),
                 );
             });
@@ -47,7 +47,11 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
 
         // Fine slider for arbitrary values.
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Custom").color(theme::TEXT_DIM).small());
+            ui.label(
+                egui::RichText::new("Custom")
+                    .color(theme::text_dim())
+                    .small(),
+            );
             let mut value = current;
             let resp = ui.add(
                 egui::Slider::new(&mut value, MIN_REFRESH_MS..=MAX_REFRESH_MS)
@@ -63,7 +67,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
         ui.add_space(6.0);
         ui.label(
             egui::RichText::new(format!("Currently sampling every {}", format_ms(current)))
-                .color(theme::ACCENT)
+                .color(theme::accent())
                 .strong(),
         );
     });
@@ -85,7 +89,7 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
                      a restart. When off, no background process runs, but history \
                      starts empty each time you open the window.",
                 )
-                .color(theme::TEXT_DIM)
+                .color(theme::text_dim())
                 .small(),
             );
         });
@@ -111,11 +115,47 @@ pub fn show(ui: &mut egui::Ui, _state: &mut State, settings: &Settings) {
 
         ui.add_space(6.0);
         let (status, color) = if enabled {
-            ("Background sampler running", theme::ACCENT)
+            ("Background sampler running", theme::accent())
         } else {
-            ("Background sampler off", theme::TEXT_DIM)
+            ("Background sampler off", theme::text_dim())
         };
         ui.label(egui::RichText::new(status).color(color).strong());
+    });
+
+    ui.add_space(12.0);
+
+    // --- Theme toggle -------------------------------------------------------
+    widgets::card(ui, |ui| {
+        ui.vertical(|ui| {
+            ui.label(egui::RichText::new("Appearance").strong().size(15.0));
+            ui.label(
+                egui::RichText::new(
+                    "Switch between dark, light, or follow your system preference. \
+                     Changes take effect immediately.",
+                )
+                .color(theme::text_dim())
+                .small(),
+            );
+        });
+        ui.add_space(10.0);
+
+        let current = settings.theme();
+        ui.horizontal(|ui| {
+            for (choice, label) in [
+                (Theme::System, "System"),
+                (Theme::Dark, "Dark"),
+                (Theme::Light, "Light"),
+            ] {
+                let selected = current == choice;
+                if ui
+                    .selectable_label(selected, egui::RichText::new(label).strong())
+                    .clicked()
+                    && !selected
+                {
+                    settings.set_theme(choice);
+                }
+            }
+        });
     });
 
     ui.add_space(12.0);
@@ -140,9 +180,13 @@ fn preset_chip(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response
     let bg = if selected {
         egui::Color32::from_rgba_unmultiplied(0x60, 0xCD, 0xFF, 50)
     } else {
-        theme::PANEL_BG
+        theme::panel_bg()
     };
-    let fg = if selected { theme::ACCENT } else { theme::TEXT };
+    let fg = if selected {
+        theme::accent()
+    } else {
+        theme::text()
+    };
     ui.add(
         egui::Button::new(egui::RichText::new(label).color(fg).strong())
             .fill(bg)

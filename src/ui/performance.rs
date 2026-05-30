@@ -101,7 +101,7 @@ fn collapse_button(ui: &mut egui::Ui, expand: bool) -> egui::Response {
     };
     let painter = ui.painter();
     painter.rect_filled(rect, egui::CornerRadius::same(6), bg);
-    let stroke = egui::Stroke::new(1.6, theme::TEXT);
+    let stroke = egui::Stroke::new(1.6, theme::text());
     let c = rect.center();
     let s = 4.0;
     let (start_x, tip_x) = if expand {
@@ -134,7 +134,7 @@ fn render_cards(ui: &mut egui::Ui, snap: &Snapshot, current: &mut Section) {
         snap.system.cpu_total,
         snap.system.cpu_temp_c,
         &snap.history.cpu_total,
-        theme::GRAPH_CPU,
+        theme::graph_cpu(),
         Section::Cpu,
         current,
     );
@@ -151,7 +151,7 @@ fn render_cards(ui: &mut egui::Ui, snap: &Snapshot, current: &mut Section) {
         snap.system.ram_used_pct,
         0.0,
         &snap.history.ram_used_pct,
-        theme::GRAPH_RAM,
+        theme::graph_ram(),
         Section::Memory,
         current,
     );
@@ -167,7 +167,7 @@ fn render_cards(ui: &mut egui::Ui, snap: &Snapshot, current: &mut Section) {
             gpu.util_pct,
             gpu.temp_c,
             hist,
-            theme::GRAPH_GPU,
+            theme::graph_gpu(),
             Section::Gpu(i),
             current,
         );
@@ -192,7 +192,7 @@ fn render_cards(ui: &mut egui::Ui, snap: &Snapshot, current: &mut Section) {
             &v,
             d.temp_c,
             &combined_disk(r, w),
-            theme::GRAPH_DISK,
+            theme::graph_disk(),
             Section::Disk(i),
             current,
         );
@@ -209,7 +209,7 @@ fn render_cards(ui: &mut egui::Ui, snap: &Snapshot, current: &mut Section) {
             &v,
             0.0,
             &combined_disk(rx, tx),
-            theme::GRAPH_NET,
+            theme::graph_net(),
             Section::Network(i),
             current,
         );
@@ -317,7 +317,7 @@ fn card_button_bps(
     let bg = if selected {
         egui::Color32::from_rgba_unmultiplied(0x60, 0xCD, 0xFF, 35)
     } else {
-        theme::CARD_BG
+        theme::card_bg()
     };
     let inner = egui::Frame::new()
         .fill(bg)
@@ -331,7 +331,7 @@ fn card_button_bps(
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(value).color(color).size(15.0));
                         if let Some(t) = temp_label(temp_c) {
-                            ui.label(egui::RichText::new(t).color(theme::TEXT_DIM).size(11.0));
+                            ui.label(egui::RichText::new(t).color(theme::text_dim()).size(11.0));
                         }
                     });
                 });
@@ -384,7 +384,7 @@ fn card_button_inner(
     let bg = if selected {
         egui::Color32::from_rgba_unmultiplied(0x60, 0xCD, 0xFF, 35)
     } else {
-        theme::CARD_BG
+        theme::card_bg()
     };
     let inner = egui::Frame::new()
         .fill(bg)
@@ -398,11 +398,11 @@ fn card_button_inner(
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(egui::RichText::new(value).color(color).strong().size(15.0));
                         if let Some(t) = &temp {
-                            ui.label(egui::RichText::new(t).color(theme::TEXT_DIM).size(11.0));
+                            ui.label(egui::RichText::new(t).color(theme::text_dim()).size(11.0));
                         }
                     });
                 });
-                ui.label(egui::RichText::new(subtitle).color(theme::TEXT_DIM).small());
+                ui.label(egui::RichText::new(subtitle).color(theme::text_dim()).small());
                 ui.add_space(2.0);
                 widgets::sparkline(ui, &format!("spark_{id}"), history, max, color, 36.0);
             });
@@ -421,7 +421,7 @@ fn panel_cpu(ui: &mut egui::Ui, snap: &Snapshot) {
             "{} cores ({} logical) · {} MHz",
             snap.system.physical_cores, snap.system.logical_cores, snap.system.cpu_freq_mhz
         ))
-        .color(theme::TEXT_DIM),
+        .color(theme::text_dim()),
     );
     ui.add_space(8.0);
 
@@ -430,7 +430,7 @@ fn panel_cpu(ui: &mut egui::Ui, snap: &Snapshot) {
         widgets::big_plot(
             ui,
             "cpu_total_plot",
-            &[("cpu", &snap.history.cpu_total, theme::GRAPH_CPU)],
+            &[("cpu", &snap.history.cpu_total, theme::graph_cpu())],
             100.0,
             180.0,
             snap.sample_interval_ms,
@@ -438,12 +438,12 @@ fn panel_cpu(ui: &mut egui::Ui, snap: &Snapshot) {
         ui.add_space(8.0);
         ui.vertical_centered(|ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Current").color(theme::TEXT_DIM));
+                ui.label(egui::RichText::new("Current").color(theme::text_dim()));
                 ui.label(egui::RichText::new(format!("{:.0}%", snap.system.cpu_total)).strong());
                 ui.add_space(20.0);
                 ui.separator();
                 ui.add_space(20.0);
-                ui.label(egui::RichText::new("Uptime").color(theme::TEXT_DIM));
+                ui.label(egui::RichText::new("Uptime").color(theme::text_dim()));
                 ui.label(
                     egui::RichText::new(widgets::format_duration(snap.system.uptime_secs)).strong(),
                 );
@@ -484,7 +484,7 @@ fn panel_cpu(ui: &mut egui::Ui, snap: &Snapshot) {
                                 &format!("core_spark_{core}"),
                                 h,
                                 100.0,
-                                theme::GRAPH_CPU,
+                                theme::graph_cpu(),
                                 32.0,
                             );
                         });
@@ -503,7 +503,7 @@ fn panel_memory(ui: &mut egui::Ui, snap: &Snapshot) {
             "{} total",
             widgets::format_bytes(snap.system.ram_total)
         ))
-        .color(theme::TEXT_DIM),
+        .color(theme::text_dim()),
     );
     ui.add_space(8.0);
 
@@ -512,7 +512,7 @@ fn panel_memory(ui: &mut egui::Ui, snap: &Snapshot) {
         widgets::big_plot(
             ui,
             "ram_plot",
-            &[("ram", &snap.history.ram_used_pct, theme::GRAPH_RAM)],
+            &[("ram", &snap.history.ram_used_pct, theme::graph_ram())],
             100.0,
             180.0,
             snap.sample_interval_ms,
@@ -559,7 +559,7 @@ fn panel_disk(ui: &mut egui::Ui, snap: &Snapshot, idx: usize) {
     };
     ui.label(
         egui::RichText::new(format!("{} · {} {}", d.fs, d.partitions, part_word))
-            .color(theme::TEXT_DIM),
+            .color(theme::text_dim()),
     );
     ui.add_space(8.0);
 
@@ -574,8 +574,8 @@ fn panel_disk(ui: &mut egui::Ui, snap: &Snapshot, idx: usize) {
             ui,
             &format!("disk_plot_{idx}"),
             &[
-                ("read", r_hist, theme::GRAPH_DISK),
-                ("write", w_hist, theme::GRAPH_NET),
+                ("read", r_hist, theme::graph_disk()),
+                ("write", w_hist, theme::graph_net()),
             ],
             max,
             180.0,
@@ -602,7 +602,7 @@ fn panel_network(ui: &mut egui::Ui, snap: &Snapshot, idx: usize) {
         return;
     };
     ui.heading(iface_label(&snap.system.nets, idx));
-    ui.label(egui::RichText::new(format!("{} · MAC {}", n.name, n.mac)).color(theme::TEXT_DIM));
+    ui.label(egui::RichText::new(format!("{} · MAC {}", n.name, n.mac)).color(theme::text_dim()));
     ui.add_space(8.0);
 
     let empty: VecDeque<f64> = VecDeque::new();
@@ -616,8 +616,8 @@ fn panel_network(ui: &mut egui::Ui, snap: &Snapshot, idx: usize) {
             ui,
             "net_plot",
             &[
-                ("rx", rx_hist, theme::GRAPH_NET),
-                ("tx", tx_hist, theme::GRAPH_DISK),
+                ("rx", rx_hist, theme::graph_net()),
+                ("tx", tx_hist, theme::graph_disk()),
             ],
             max,
             180.0,
@@ -643,7 +643,7 @@ fn gpu_util_unavailable_banner(ui: &mut egui::Ui, vendor: &str) {
         .show(ui, |ui| {
             ui.label(
                 egui::RichText::new("GPU utilization unavailable")
-                    .color(theme::WARN)
+                    .color(theme::warn())
                     .strong(),
             );
             ui.add_space(4.0);
@@ -654,19 +654,19 @@ fn gpu_util_unavailable_banner(ui: &mut egui::Ui, vendor: &str) {
                 "rproc could not read this GPU's utilization counter. The kernel requires \
                  elevated permissions to access the perf PMU."
             };
-            ui.label(egui::RichText::new(detail).color(theme::TEXT_DIM));
+            ui.label(egui::RichText::new(detail).color(theme::text_dim()));
             ui.add_space(8.0);
-            ui.label(egui::RichText::new("Fix (pick one):").color(theme::TEXT_DIM));
+            ui.label(egui::RichText::new("Fix (pick one):").color(theme::text_dim()));
             ui.add_space(2.0);
             ui.label(
                 egui::RichText::new("  sudo setcap cap_perfmon=ep $(which rproc)")
                     .monospace()
-                    .color(theme::TEXT),
+                    .color(theme::text()),
             );
             ui.label(
                 egui::RichText::new("  sudo sysctl kernel.perf_event_paranoid=2")
                     .monospace()
-                    .color(theme::TEXT),
+                    .color(theme::text()),
             );
         });
 }
@@ -678,7 +678,7 @@ fn panel_gpu(ui: &mut egui::Ui, snap: &Snapshot, idx: usize) {
     };
     ui.heading(format!("GPU: {}", g.name));
     ui.label(
-        egui::RichText::new(format!("{} · driver {}", g.vendor, g.driver)).color(theme::TEXT_DIM),
+        egui::RichText::new(format!("{} · driver {}", g.vendor, g.driver)).color(theme::text_dim()),
     );
     ui.add_space(8.0);
 
@@ -696,8 +696,8 @@ fn panel_gpu(ui: &mut egui::Ui, snap: &Snapshot, idx: usize) {
             ui,
             "gpu_plot",
             &[
-                ("util", util_hist, theme::GRAPH_GPU),
-                ("vram", mem_hist, theme::GRAPH_RAM),
+                ("util", util_hist, theme::graph_gpu()),
+                ("vram", mem_hist, theme::graph_ram()),
             ],
             100.0,
             180.0,

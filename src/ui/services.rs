@@ -52,10 +52,10 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
             );
         });
     });
-    ui.label(egui::RichText::new("systemd system + user units (.service).").color(theme::TEXT_DIM));
+    ui.label(egui::RichText::new("systemd system + user units (.service).").color(theme::text_dim()));
 
     if let Some((ok, msg)) = &state.last_message {
-        ui.colored_label(if *ok { theme::OK } else { theme::ERR }, msg);
+        ui.colored_label(if *ok { theme::ok() } else { theme::err() }, msg);
     }
     ui.add_space(8.0);
 
@@ -79,7 +79,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
     let mut open_properties: Option<(String, ServiceScope)> = None;
 
     egui::Frame::new()
-        .fill(theme::PANEL_BG)
+        .fill(theme::panel_bg())
         .corner_radius(egui::CornerRadius::same(8))
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
@@ -203,7 +203,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State) {
     ui.add_space(6.0);
     ui.label(
         egui::RichText::new(format!("{} units shown", rows.len()))
-            .color(theme::TEXT_DIM)
+            .color(theme::text_dim())
             .small(),
     );
 
@@ -313,7 +313,7 @@ fn render_service_properties_window(
                 ui.add_space(4.0);
             }
             if !props.drop_in_paths.is_empty() {
-                ui.label(egui::RichText::new("Drop-in files").color(theme::TEXT_DIM));
+                ui.label(egui::RichText::new("Drop-in files").color(theme::text_dim()));
                 for p in &props.drop_in_paths {
                     widgets::path_field_compact(ui, p);
                 }
@@ -329,7 +329,7 @@ fn render_service_properties_window(
                 ui.add_space(4.0);
             }
             if !props.exec_start.is_empty() {
-                ui.label(egui::RichText::new("ExecStart").color(theme::TEXT_DIM));
+                ui.label(egui::RichText::new("ExecStart").color(theme::text_dim()));
                 ui.add(egui::Label::new(&props.exec_start).wrap());
             }
         });
@@ -343,9 +343,9 @@ fn render_service_properties_window(
 
 fn active_color(s: &str) -> egui::Color32 {
     match s {
-        "active" => theme::OK,
-        "activating" | "reloading" => theme::WARN,
-        "failed" => theme::ERR,
-        _ => theme::TEXT_DIM,
+        "active" => theme::ok(),
+        "activating" | "reloading" => theme::warn(),
+        "failed" => theme::err(),
+        _ => theme::text_dim(),
     }
 }

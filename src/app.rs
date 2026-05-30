@@ -40,6 +40,10 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Re-apply the theme visuals each frame so toggling the theme in
+        // Settings takes effect immediately without a restart.
+        theme::apply(ctx);
+
         // Repaint roughly twice as often as the sampler ticks so plots animate
         // smoothly and the hover crosshair tracks the cursor.
         let refresh = self.settings.refresh_ms().max(50);
@@ -67,7 +71,7 @@ impl eframe::App for App {
             .exact_width(sidebar_width)
             .frame(
                 egui::Frame::new()
-                    .fill(theme::SIDEBAR_BG)
+                    .fill(theme::sidebar_bg())
                     .inner_margin(egui::Margin::same(sidebar_margin)),
             )
             .show(ctx, |ui| {
@@ -77,7 +81,7 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(theme::BG)
+                    .fill(theme::bg())
                     .inner_margin(egui::Margin::same(20)),
             )
             .show(ctx, |ui| match self.tab {

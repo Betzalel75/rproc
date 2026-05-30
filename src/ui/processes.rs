@@ -317,7 +317,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
     let descending = &mut state.descending;
 
     egui::Frame::new()
-        .fill(theme::PANEL_BG)
+        .fill(theme::panel_bg())
         .corner_radius(egui::CornerRadius::same(8))
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
@@ -498,13 +498,13 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(format!("{total} processes"))
-                .color(theme::TEXT_DIM)
+                .color(theme::text_dim())
                 .small(),
         );
         if !snap.ready {
             ui.label(
                 egui::RichText::new("  · sampling…")
-                    .color(theme::TEXT_DIM)
+                    .color(theme::text_dim())
                     .small(),
             );
         }
@@ -517,7 +517,7 @@ fn render_section_header(row: &mut TableRow<'_, '_>, title: &str) {
         ui.add(
             egui::Label::new(
                 egui::RichText::new(title.to_uppercase())
-                    .color(theme::ACCENT)
+                    .color(theme::accent())
                     .strong(),
             )
             .selectable(false),
@@ -550,7 +550,7 @@ fn render_group_header(
         } else {
             CaretDir::Right
         };
-        draw_caret(ui.painter(), rect, theme::TEXT, dir);
+        draw_caret(ui.painter(), rect, theme::text(), dir);
         let arrow_resp = arrow_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         draw_icon(ui, icon_uri.as_deref());
         ui.add(
@@ -629,9 +629,9 @@ fn sortable_header(
 ) {
     let is_active = *sort == key;
     let color = if is_active {
-        theme::TEXT
+        theme::text()
     } else {
-        theme::TEXT_DIM
+        theme::text_dim()
     };
     let dir = if !is_active || *descending {
         CaretDir::Down
@@ -1011,14 +1011,14 @@ fn render_properties_window(
                 ui.add_space(4.0);
             }
             if !view.configs.is_empty() {
-                ui.label(egui::RichText::new("Config").color(theme::TEXT_DIM));
+                ui.label(egui::RichText::new("Config").color(theme::text_dim()));
                 for path in &view.configs {
                     widgets::path_field_compact(ui, &path.to_string_lossy());
                 }
                 ui.add_space(4.0);
             }
             if !p.cmd.is_empty() {
-                ui.label(egui::RichText::new("Command line").color(theme::TEXT_DIM));
+                ui.label(egui::RichText::new("Command line").color(theme::text_dim()));
                 ui.add(egui::Label::new(&p.cmd).wrap());
             }
         });
@@ -1050,11 +1050,11 @@ fn draw_icon(ui: &mut egui::Ui, uri: Option<&str>) {
 
 fn status_color(s: &str) -> egui::Color32 {
     match s {
-        "Run" | "Running" => theme::OK,
-        "Sleep" | "Sleeping" | "Idle" => theme::TEXT_DIM,
-        "Waiting" | "Stop" | "Stopped" => theme::WARN,
-        "Zombie" | "Dead" => theme::ERR,
-        _ => theme::TEXT,
+        "Run" | "Running" => theme::ok(),
+        "Sleep" | "Sleeping" | "Idle" => theme::text_dim(),
+        "Waiting" | "Stop" | "Stopped" => theme::warn(),
+        "Zombie" | "Dead" => theme::err(),
+        _ => theme::text(),
     }
 }
 
@@ -1179,7 +1179,7 @@ mod tests {
     fn status_color_known_states_distinct_from_default() {
         // Regression: every known status string should map to a non-default
         // colour (otherwise the column loses its visual cue).
-        let default = theme::TEXT;
+        let default = theme::text();
         assert_ne!(status_color("Running"), default);
         assert_ne!(status_color("Idle"), default);
         assert_ne!(status_color("Stopped"), default);

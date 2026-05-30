@@ -297,8 +297,8 @@ fn draw_hover_overlay<F>(
 
     plot_ui.vline(
         VLine::new("", snapped_x)
-            .stroke(egui::Stroke::new(1.0, theme::TEXT_DIM))
-            .color(theme::TEXT_DIM),
+            .stroke(egui::Stroke::new(1.0, theme::text_dim()))
+            .color(theme::text_dim()),
     );
 
     let samples_ago = ((HISTORY_LEN - 1) as i64) - snapped_x as i64;
@@ -314,7 +314,7 @@ fn draw_hover_overlay<F>(
         Text::new(
             "",
             PlotPoint::new(snapped_x, max_y * 0.97),
-            egui::RichText::new(header).color(theme::TEXT_DIM).strong(),
+            egui::RichText::new(header).color(theme::text_dim()).strong(),
         )
         .anchor(anchor),
     );
@@ -365,8 +365,8 @@ fn draw_hover_overlay_f64<F>(
 
     plot_ui.vline(
         VLine::new("", snapped_x)
-            .stroke(egui::Stroke::new(1.0, theme::TEXT_DIM))
-            .color(theme::TEXT_DIM),
+            .stroke(egui::Stroke::new(1.0, theme::text_dim()))
+            .color(theme::text_dim()),
     );
 
     let samples_ago = ((HISTORY_LEN - 1) as i64) - snapped_x as i64;
@@ -382,7 +382,7 @@ fn draw_hover_overlay_f64<F>(
         Text::new(
             "",
             PlotPoint::new(snapped_x, max_y * 0.97),
-            egui::RichText::new(header).color(theme::TEXT_DIM).strong(),
+            egui::RichText::new(header).color(theme::text_dim()).strong(),
         )
         .anchor(anchor),
     );
@@ -412,7 +412,7 @@ fn draw_hover_overlay_f64<F>(
 /// Card frame matching the W11-inspired panel look.
 pub fn card<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     egui::Frame::new()
-        .fill(theme::CARD_BG)
+        .fill(theme::card_bg())
         .inner_margin(egui::Margin::same(12))
         .corner_radius(egui::CornerRadius::same(8))
         .show(ui, add)
@@ -422,7 +422,7 @@ pub fn card<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
 /// Stat line: a label on the left, a strong value on the right.
 pub fn stat(ui: &mut egui::Ui, label: &str, value: &str) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).color(theme::TEXT_DIM));
+        ui.label(egui::RichText::new(label).color(theme::text_dim()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(egui::RichText::new(value).strong());
         });
@@ -456,7 +456,7 @@ pub fn open_path(path: &str, target: OpenTarget) {
 /// parent, per `target`) in the file manager.
 pub fn path_field(ui: &mut egui::Ui, label: &str, path: &str, target: OpenTarget) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).color(theme::TEXT_DIM));
+        ui.label(egui::RichText::new(label).color(theme::text_dim()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add(egui::Button::new("Open").small())
@@ -469,7 +469,7 @@ pub fn path_field(ui: &mut egui::Ui, label: &str, path: &str, target: OpenTarget
     });
     let resp = ui
         .add(
-            egui::Label::new(egui::RichText::new(path).color(theme::TEXT))
+            egui::Label::new(egui::RichText::new(path).color(theme::text()))
                 .wrap()
                 .sense(egui::Sense::click()),
         )
@@ -486,7 +486,7 @@ pub fn path_field_compact(ui: &mut egui::Ui, path: &str) {
     ui.horizontal(|ui| {
         let resp = ui
             .add(
-                egui::Label::new(egui::RichText::new(path).color(theme::TEXT))
+                egui::Label::new(egui::RichText::new(path).color(theme::text()))
                     .truncate()
                     .sense(egui::Sense::click()),
             )
