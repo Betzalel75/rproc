@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use egui_extras::{Column, TableBuilder, TableRow};
@@ -92,6 +92,13 @@ fn save_sort_prefs_to(
     std::fs::write(path, content)
 }
 
+#[derive(Default, PartialEq, Copy, Clone, Debug)]
+pub enum ViewMode {
+    #[default]
+    Grouped,
+    Tree,
+}
+
 /// Heavy lookups behind the Properties modal — each one walks `/proc` and
 /// performs a fistful of syscalls. Computed when the modal opens, then
 /// re-used until the user clicks Reload or opens a different PID.
@@ -111,6 +118,8 @@ pub struct State {
     filter: String,
     icons: icons::Resolver,
     properties: Option<ProcessPropertiesView>,
+    pub view_mode: ViewMode,
+    tree_expanded: HashSet<u32>,
 }
 
 impl State {
@@ -125,6 +134,8 @@ impl State {
             filter: String::new(),
             icons: icons::Resolver::new(),
             properties: None,
+            view_mode: ViewMode::default(),
+            tree_expanded: HashSet::new(),
         }
     }
 }
@@ -184,6 +195,104 @@ enum Row<'a> {
     Single(&'a monitor::processes::ProcInfo),
     Child(&'a monitor::processes::ProcInfo),
 }
+
+// --- Tree view ------------------------------------------------------------------
+
+#[derive(Clone, Copy)]
+struct TreeRow<'a> {
+    proc: &'a monitor::processes::ProcInfo,
+    depth: u8,
+    has_children: bool,
+    expanded: bool,
+    is_last_child: bool,
+}
+
+/// Build a flat list of tree rows from the process list, keeping the
+/// parent-child hierarchy visible through indentation.
+///
+/// Roots are processes whose parent PID is absent from the list (or is 0).
+/// Children are nested under their parent, indented proportionally.
+/// The `matches` predicate filters before tree construction so filtered-out
+/// subtrees are hidden entirely.
+fn build_tree_rows<'a>(
+    procs: &'a [monitor::processes::ProcInfo],
+    matches: &dyn Fn(&monitor::processes::ProcInfo) -> bool,
+    expanded: &HashSet<u32>,
+    filter_active: bool,
+) -> Vec<TreeRow<'a>> {
+    // Index processes by PID for O(1) child lookup.
+    let by_pid: HashMap<u32, &monitor::processes::ProcInfo> =
+        procs.iter().filter(|p| matches(p)).map(|p| (p.pid, p)).collect();
+
+    // Parent → children mapping.
+    let mut children: HashMap<u32, Vec<&monitor::processes::ProcInfo>> = HashMap::new();
+    let mut roots: Vec<&monitor::processes::ProcInfo> = Vec::new();
+    for p in procs {
+        if !matches(p) {
+            continue;
+        }
+        match p.parent {
+            Some(parent_pid) if by_pid.contains_key(&parent_pid) => {
+                children.entry(parent_pid).or_default().push(p);
+            }
+            _ => roots.push(p),
+        }
+    }
+
+    // Sort roots by name, then PID for stability.
+    roots.sort_by(|a, b| a.name.cmp(&b.name).then(a.pid.cmp(&b.pid)));
+    for kids in children.values_mut() {
+        kids.sort_by(|a, b| a.name.cmp(&b.name).then(a.pid.cmp(&b.pid)));
+    }
+
+    let mut rows = Vec::new();
+    for root in roots {
+        push_tree_rows(root, 0, &children, expanded, filter_active, &mut rows);
+    }
+    rows
+}
+
+fn push_tree_rows<'a>(
+    proc: &'a monitor::processes::ProcInfo,
+    depth: u8,
+    children: &HashMap<u32, Vec<&'a monitor::processes::ProcInfo>>,
+    expanded: &HashSet<u32>,
+    filter_active: bool,
+    out: &mut Vec<TreeRow<'a>>,
+) {
+    let kids = children.get(&proc.pid);
+    let has_kids = kids.is_some_and(|k| !k.is_empty());
+    let is_expanded = filter_active || expanded.contains(&proc.pid);
+    let kid_count = kids.map(|k| k.len()).unwrap_or(0);
+
+    out.push(TreeRow {
+        proc,
+        depth,
+        has_children: has_kids,
+        expanded: is_expanded,
+        is_last_child: false, // set by caller iteration
+    });
+
+    if has_kids && is_expanded {
+        if let Some(kids) = kids {
+            for (i, child) in kids.iter().enumerate() {
+                // Temporarily push with is_last_child set; we'll override
+                // after collecting children (depth-first keeps it simple).
+                let last = i == kid_count - 1;
+                push_tree_rows(child, depth + 1, children, expanded, filter_active, out);
+                // Fixup the last child marker on the row we just pushed
+                // (it's the most recent row — the child itself at depth+1).
+                if last {
+                    if let Some(last_row) = out.last_mut() {
+                        last_row.is_last_child = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- Grouped view -------------------------------------------------------------
 
 /// Split the built groups into the "Apps" section (processes with a freedesktop
 /// `.desktop` entry — launchable applications) and the background section
@@ -254,10 +363,21 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
                 ui.add_enabled(false, egui::Button::new("End task"));
             }
             ui.add_space(8.0);
+            // View mode toggle
+            let mode_label = match state.view_mode {
+                ViewMode::Grouped => "Tree",
+                ViewMode::Tree => "Grouped",
+            };
+            if ui.button(mode_label).on_hover_text("Switch view mode").clicked() {
+                state.view_mode = match state.view_mode {
+                    ViewMode::Grouped => ViewMode::Tree,
+                    ViewMode::Tree => ViewMode::Grouped,
+                };
+            }
             ui.add(
                 egui::TextEdit::singleline(&mut state.filter)
                     .hint_text("Filter by name or PID")
-                    .desired_width(220.0),
+                    .desired_width(200.0),
             );
         });
     });
@@ -273,170 +393,167 @@ pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
         p.name.to_lowercase().contains(&filter) || p.pid.to_string().contains(&filter)
     };
 
-    let groups: Vec<Group> = build_groups(&snap.processes, &matches);
-
-    // Apps (have a .desktop entry) on top, background processes below. Each
-    // section sorts on its own so a busy daemon never jumps above the apps.
-    let (mut apps, mut services): (Vec<Group>, Vec<Group>) = groups.into_iter().partition(|g| {
-        g.procs
-            .iter()
-            .any(|p| state.icons.has_desktop_entry(&p.name, &p.exe))
-    });
-    for section in [&mut apps, &mut services] {
-        sort_groups(section, state.sort, state.descending);
-        for g in section.iter_mut() {
-            sort_children(&mut g.procs, state.sort, state.descending);
-        }
-    }
-
-    let mut visible: Vec<Row> = Vec::with_capacity(snap.processes.len() + 2);
-    append_section(&mut visible, "Apps", &apps, filter_active, &state.expanded);
-    append_section(
-        &mut visible,
-        "Background processes",
-        &services,
-        filter_active,
-        &state.expanded,
-    );
-
     let total = snap.processes.len();
     let total_cpu_used: f32 = snap.system.cpu_total;
     let total_mem_used: f32 = snap.system.ram_used_pct;
     let selected_pid = state.selected_pid;
     let selected_group = state.selected_group.clone();
 
-    // Deferred mutations: the rows closure can't easily reach `state` because
-    // the table cell closures move captures around. Collect events here and
-    // apply them after the table is done.
+    // Deferred mutations
     let mut toggle_group: Option<String> = None;
     let mut click_pid: Option<u32> = None;
     let mut click_group: Option<String> = None;
     let mut open_properties_pid: Option<u32> = None;
-    let icons = &mut state.icons;
-    let sort = &mut state.sort;
-    let descending = &mut state.descending;
+    let mut toggle_tree: Option<u32> = None;
 
-    egui::Frame::new()
-        .fill(theme::panel_bg())
-        .corner_radius(egui::CornerRadius::same(8))
-        .inner_margin(egui::Margin::same(8))
-        .show(ui, |ui| {
-            let header_height = 26.0;
-            let row_height = 22.0;
-            let section_height = 30.0;
+    if state.view_mode == ViewMode::Tree {
+        let tree_rows = build_tree_rows(&snap.processes, &matches, &state.tree_expanded, filter_active);
+        let visible_count = tree_rows.len();
 
-            TableBuilder::new(ui)
-                .striped(true)
-                .resizable(true)
-                .sense(egui::Sense::click())
-                .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-                .column(Column::initial(260.0).at_least(140.0).clip(true))
-                .column(Column::initial(60.0).at_least(50.0))
-                .column(Column::initial(100.0).at_least(70.0))
-                .column(Column::initial(80.0).at_least(60.0))
-                .column(Column::initial(100.0).at_least(80.0))
-                .column(Column::initial(120.0).at_least(90.0))
-                .column(Column::remainder().at_least(70.0))
-                .header(header_height, |mut header| {
-                    header.col(|ui| {
-                        sortable_header(ui, "Name", SortKey::Name, sort, descending);
-                    });
-                    header.col(|ui| {
-                        sortable_header(ui, "PID", SortKey::Pid, sort, descending);
-                    });
-                    header.col(|ui| {
-                        sortable_header(ui, "User", SortKey::User, sort, descending);
-                    });
-                    header.col(|ui| {
-                        sortable_header(
-                            ui,
-                            &format!("CPU  {:.0}%", total_cpu_used),
-                            SortKey::Cpu,
-                            sort,
-                            descending,
-                        );
-                    });
-                    header.col(|ui| {
-                        sortable_header(
-                            ui,
-                            &format!("Memory  {:.0}%", total_mem_used),
-                            SortKey::Mem,
-                            sort,
-                            descending,
-                        );
-                    });
-                    header.col(|ui| {
-                        sortable_header(ui, "Disk (R+W)", SortKey::Disk, sort, descending);
-                    });
-                    header.col(|ui| {
-                        sortable_header(ui, "Status", SortKey::Status, sort, descending);
-                    });
-                })
-                .body(|body| {
-                    let heights = visible.iter().map(|r| match r {
-                        Row::SectionHeader(_) => section_height,
-                        _ => row_height,
-                    });
-                    body.heterogeneous_rows(heights, |mut row| {
-                        let idx = row.index();
-                        match visible[idx] {
-                            Row::SectionHeader(title) => {
-                                render_section_header(&mut row, title);
+        egui::Frame::new()
+            .fill(theme::panel_bg())
+            .corner_radius(egui::CornerRadius::same(8))
+            .inner_margin(egui::Margin::same(8))
+            .show(ui, |ui| {
+                let row_height = 22.0;
+                TableBuilder::new(ui)
+                    .striped(true)
+                    .resizable(true)
+                    .sense(egui::Sense::click())
+                    .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+                    .column(Column::initial(300.0).at_least(160.0).clip(true))
+                    .column(Column::initial(60.0).at_least(50.0))
+                    .column(Column::initial(100.0).at_least(70.0))
+                    .column(Column::initial(80.0).at_least(60.0))
+                    .column(Column::initial(100.0).at_least(80.0))
+                    .column(Column::initial(120.0).at_least(90.0))
+                    .column(Column::remainder().at_least(70.0))
+                    .header(26.0, |mut header| {
+                        header.col(|ui| { sortable_header(ui, "Name", SortKey::Name, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, "PID", SortKey::Pid, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, "User", SortKey::User, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, &format!("CPU  {:.0}%", total_cpu_used), SortKey::Cpu, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, &format!("Memory  {:.0}%", total_mem_used), SortKey::Mem, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, "Disk (R+W)", SortKey::Disk, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, "Status", SortKey::Status, &mut state.sort, &mut state.descending); });
+                    })
+                    .body(|body| {
+                        body.rows(row_height, visible_count, |mut row| {
+                            let tr = &tree_rows[row.index()];
+                            row.set_selected(selected_pid == Some(tr.proc.pid));
+                            render_tree_row(&mut row, tr, &mut state.icons, &mut toggle_tree);
+                            let resp = row.response().on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if resp.clicked() || resp.secondary_clicked() {
+                                click_pid = Some(tr.proc.pid);
                             }
-                            Row::GroupHeader { g, expanded } => {
-                                row.set_selected(selected_group.as_deref() == Some(g.name));
-                                render_group_header(
-                                    &mut row,
-                                    g,
-                                    expanded,
-                                    &mut toggle_group,
-                                    icons,
-                                );
-                                let resp = row
-                                    .response()
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if resp.clicked() || resp.secondary_clicked() {
-                                    click_group = Some(g.name.to_string());
+                            resp.context_menu(|ui| {
+                                proc_context_menu(ui, tr.proc, &mut open_properties_pid);
+                            });
+                        });
+                    });
+            });
+    } else {
+        let groups: Vec<Group> = build_groups(&snap.processes, &matches);
+
+        let (mut apps, mut services): (Vec<Group>, Vec<Group>) = {
+            let icons = &state.icons;
+            groups.into_iter().partition(|g| {
+                g.procs
+                    .iter()
+                    .any(|p| icons.has_desktop_entry(&p.name, &p.exe))
+            })
+        };
+        for section in [&mut apps, &mut services] {
+            sort_groups(section, state.sort, state.descending);
+            for g in section.iter_mut() {
+                sort_children(&mut g.procs, state.sort, state.descending);
+            }
+        }
+
+        let mut visible: Vec<Row> = Vec::with_capacity(snap.processes.len() + 2);
+        append_section(&mut visible, "Apps", &apps, filter_active, &state.expanded);
+        append_section(&mut visible, "Background processes", &services, filter_active, &state.expanded);
+
+        egui::Frame::new()
+            .fill(theme::panel_bg())
+            .corner_radius(egui::CornerRadius::same(8))
+            .inner_margin(egui::Margin::same(8))
+            .show(ui, |ui| {
+                let row_height = 22.0;
+                let section_height = 30.0;
+
+                TableBuilder::new(ui)
+                    .striped(true)
+                    .resizable(true)
+                    .sense(egui::Sense::click())
+                    .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+                    .column(Column::initial(260.0).at_least(140.0).clip(true))
+                    .column(Column::initial(60.0).at_least(50.0))
+                    .column(Column::initial(100.0).at_least(70.0))
+                    .column(Column::initial(80.0).at_least(60.0))
+                    .column(Column::initial(100.0).at_least(80.0))
+                    .column(Column::initial(120.0).at_least(90.0))
+                    .column(Column::remainder().at_least(70.0))
+                    .header(26.0, |mut header| {
+                        header.col(|ui| { sortable_header(ui, "Name", SortKey::Name, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, "PID", SortKey::Pid, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, "User", SortKey::User, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, &format!("CPU  {:.0}%", total_cpu_used), SortKey::Cpu, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, &format!("Memory  {:.0}%", total_mem_used), SortKey::Mem, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, "Disk (R+W)", SortKey::Disk, &mut state.sort, &mut state.descending); });
+                        header.col(|ui| { sortable_header(ui, "Status", SortKey::Status, &mut state.sort, &mut state.descending); });
+                    })
+                    .body(|body| {
+                        let heights = visible.iter().map(|r| match r {
+                            Row::SectionHeader(_) => section_height,
+                            _ => row_height,
+                        });
+                        body.heterogeneous_rows(heights, |mut row| {
+                            let idx = row.index();
+                            match visible[idx] {
+                                Row::SectionHeader(title) => { render_section_header(&mut row, title); }
+                                Row::GroupHeader { g, expanded } => {
+                                    row.set_selected(selected_group.as_deref() == Some(g.name));
+                                    render_group_header(&mut row, g, expanded, &mut toggle_group, &mut state.icons);
+                                    let resp = row.response().on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    if resp.clicked() || resp.secondary_clicked() {
+                                        click_group = Some(g.name.to_string());
+                                    }
+                                    resp.context_menu(|ui| { group_context_menu(ui, g, &mut open_properties_pid); });
                                 }
-                                resp.context_menu(|ui| {
-                                    group_context_menu(ui, g, &mut open_properties_pid)
-                                });
-                            }
-                            Row::Single(p) => {
-                                row.set_selected(selected_pid == Some(p.pid));
-                                render_proc_row(&mut row, p, false, icons);
-                                let resp = row
-                                    .response()
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if resp.clicked() || resp.secondary_clicked() {
-                                    click_pid = Some(p.pid);
+                                Row::Single(p) => {
+                                    row.set_selected(selected_pid == Some(p.pid));
+                                    render_proc_row(&mut row, p, false, &mut state.icons);
+                                    let resp = row.response().on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    if resp.clicked() || resp.secondary_clicked() {
+                                        click_pid = Some(p.pid);
+                                    }
+                                    resp.context_menu(|ui| { proc_context_menu(ui, p, &mut open_properties_pid); });
                                 }
-                                resp.context_menu(|ui| {
-                                    proc_context_menu(ui, p, &mut open_properties_pid)
-                                });
-                            }
-                            Row::Child(p) => {
-                                row.set_selected(selected_pid == Some(p.pid));
-                                render_proc_row(&mut row, p, true, icons);
-                                let resp = row
-                                    .response()
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if resp.clicked() || resp.secondary_clicked() {
-                                    click_pid = Some(p.pid);
+                                Row::Child(p) => {
+                                    row.set_selected(selected_pid == Some(p.pid));
+                                    render_proc_row(&mut row, p, true, &mut state.icons);
+                                    let resp = row.response().on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    if resp.clicked() || resp.secondary_clicked() {
+                                        click_pid = Some(p.pid);
+                                    }
+                                    resp.context_menu(|ui| { proc_context_menu(ui, p, &mut open_properties_pid); });
                                 }
-                                resp.context_menu(|ui| {
-                                    proc_context_menu(ui, p, &mut open_properties_pid)
-                                });
                             }
-                        }
+                        });
                     });
-                });
-        });
+            });
+    }
 
     if let Some(name) = toggle_group
         && !state.expanded.remove(&name)
     {
         state.expanded.insert(name);
+    }
+    if let Some(pid) = toggle_tree
+        && !state.tree_expanded.remove(&pid)
+    {
+        state.tree_expanded.insert(pid);
     }
     if let Some(pid) = click_pid {
         state.selected_pid = Some(pid);
@@ -617,6 +734,53 @@ fn render_proc_row(
     });
     row.col(|ui| {
         ui.label(egui::RichText::new(&p.status).color(status_color(&p.status)));
+    });
+}
+
+fn render_tree_row(
+    row: &mut TableRow<'_, '_>,
+    tr: &TreeRow<'_>,
+    icons: &mut icons::Resolver,
+    toggle_tree: &mut Option<u32>,
+) {
+    let icon_uri = icons.icon_uri(&tr.proc.name, &tr.proc.exe);
+    row.col(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        let indent = tr.depth as f32 * 18.0;
+        ui.add_space(indent);
+
+        if tr.has_children {
+            let (rect, arrow_resp) =
+                ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::click());
+            let dir = if tr.expanded { CaretDir::Down } else { CaretDir::Right };
+            draw_caret(ui.painter(), rect, theme::text_dim(), dir);
+            if arrow_resp.clicked() {
+                *toggle_tree = Some(tr.proc.pid);
+            }
+        } else {
+            // Draw a tree-line connector for leaf nodes to maintain alignment.
+            ui.add_space(10.0);
+        }
+
+        draw_icon(ui, icon_uri.as_deref());
+        let resp = ui.add(egui::Label::new(&tr.proc.name).truncate().selectable(false));
+        resp.on_hover_text(if tr.proc.cmd.is_empty() { &tr.proc.exe } else { &tr.proc.cmd });
+    });
+    row.col(|ui| { ui.label(tr.proc.pid.to_string()); });
+    row.col(|ui| { ui.label(&tr.proc.user); });
+    row.col(|ui| { ui.label(format_pct(tr.proc.cpu_pct)); });
+    row.col(|ui| { ui.label(widgets::format_bytes(tr.proc.mem_bytes)); });
+    row.col(|ui| {
+        let combined = tr.proc.disk_read_bps + tr.proc.disk_write_bps;
+        let resp = ui.label(widgets::format_bps(combined));
+        resp.on_hover_text(format!(
+            "Read: {}\nWrite: {}",
+            widgets::format_bps(tr.proc.disk_read_bps),
+            widgets::format_bps(tr.proc.disk_write_bps),
+        ));
+    });
+    row.col(|ui| {
+        ui.label(egui::RichText::new(&tr.proc.status).color(status_color(&tr.proc.status)));
     });
 }
 
