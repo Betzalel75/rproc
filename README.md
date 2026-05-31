@@ -76,11 +76,12 @@ cargo run --release
 
 ## Features
 
-- **Processes**: CPU, memory, disk I/O, threads and status. Sort, filter and kill.
+- **Processes**: CPU, memory, disk I/O, threads and status, with app icons from the freedesktop icon theme. Sort, filter and kill.
 - **Performance**: live charts for CPU (global + per-core), memory, disks, network and GPU (NVIDIA / AMD / Intel).
+- **Per-process graph attribution** *(opt-in)*: hover a point on a Performance graph to see the top 5 processes behind that sample (CPU, RAM, disk and GPU). Off by default; enable it in Settings.
 - **Startup**: XDG autostart entries and enabled systemd units.
 - **Services**: systemctl system and user units.
-- **Settings**: adjustable refresh rate.
+- **Settings**: adjustable refresh rate and the per-process attribution toggle.
 
 <div align="center">
   <img src="./img/capture2.png" alt="Processes tab" width="450">
