@@ -127,6 +127,17 @@ impl State {
             properties: None,
         }
     }
+
+    /// Flush the persistent icon cache to disk. Called from `App::on_exit`.
+    pub fn save_icon_cache(&mut self) {
+        self.icons.save_persistent();
+    }
+
+    /// Throttled per-frame flush of the icon cache, so a non-clean shutdown
+    /// (one that skips `on_exit`) loses at most a few seconds of resolved icons.
+    pub fn flush_icon_cache_if_due(&mut self) {
+        self.icons.flush_if_due();
+    }
 }
 
 impl Default for State {
@@ -216,6 +227,10 @@ fn append_section<'a>(
 }
 
 pub fn show(ui: &mut egui::Ui, state: &mut State, snap: &Snapshot) {
+    // Must run before the apps/background partition below, which queries
+    // `has_desktop_entry`.
+    state.icons.pump(ui.ctx());
+
     // Title row + selection actions on the right.
     ui.horizontal(|ui| {
         ui.heading("Processes");
@@ -993,18 +1008,24 @@ fn render_properties_window(
 }
 
 fn draw_icon(ui: &mut egui::Ui, uri: Option<&str>) {
-    let Some(uri) = uri else { return };
     let size = egui::Vec2::splat(16.0);
-    let image = egui::Image::new(uri.to_string())
-        .fit_to_exact_size(size)
-        .maintain_aspect_ratio(true)
-        .show_loading_spinner(false);
-    // Skip silently on decode errors / missing format support so we don't show
-    // a broken-image glyph in the row.
-    if image.load_for_size(ui.ctx(), size).is_err() {
-        return;
+    if let Some(uri) = uri {
+        let image = egui::Image::new(uri)
+            .fit_to_exact_size(size)
+            .maintain_aspect_ratio(true)
+            .show_loading_spinner(false);
+        // Probe the decode up front: the extension filter only guarantees a
+        // loadable extension, not a decodable file. Fall back to the gear
+        // glyph on error / missing format support so we don't show a
+        // broken-image glyph in the row.
+        if image.load_for_size(ui.ctx(), size).is_ok() {
+            ui.add(image);
+            return;
+        }
     }
-    ui.add(image);
+    ui.add(egui::Label::new(
+        egui::RichText::new("⚙").color(theme::TEXT_DIM).size(14.0),
+    ));
 }
 
 fn status_color(s: &str) -> egui::Color32 {
