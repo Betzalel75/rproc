@@ -16,6 +16,31 @@ Built in Rust with [`egui`](https://github.com/emilk/egui).
 
 </div>
 
+## Features
+
+- **Processes**: CPU, memory, disk I/O, threads and status, with app icons from the freedesktop icon theme. Sort, filter and kill.
+- **Performance**: live charts for CPU (global + per-core), memory, disks, network and GPU (NVIDIA / AMD / Intel).
+- **Per-process graph attribution** *(opt-in)*: hover a point on a Performance graph to see the top 5 processes behind that sample (CPU, RAM, disk and GPU). Off by default; enable it in Settings.
+- **Startup**: XDG autostart entries and enabled systemd units.
+- **Services**: systemctl system and user units.
+- **Settings**: adjustable refresh rate and the per-process attribution toggle.
+
+### RAM Usage
+
+rproc is also kindly more optimized (in terms of RAM usage) than most resources monitor with similar features. 
+
+| Solution | RAM |
+| ------------- | ------------- |
+| rproc  | 130 (+35 MB optional deamon)  |
+| Gnome System Monitor | 185MB |
+| Resources | 200MB |
+| Mission Center | 239MB |
+
+<div align="center">
+  <img src="./img/capture2.png" alt="Processes tab" width="450">
+  <img src="./img/capture3.png" alt="Startup apps" width="450">
+</div>
+
 ## Install
 
 Prebuilt packages for every release are on the
@@ -73,20 +98,6 @@ git clone https://github.com/Trystan-SA/rproc.git
 cd rproc
 cargo run --release
 ```
-
-## Features
-
-- **Processes**: CPU, memory, disk I/O, threads and status, with app icons from the freedesktop icon theme. Sort, filter and kill.
-- **Performance**: live charts for CPU (global + per-core), memory, disks, network and GPU (NVIDIA / AMD / Intel).
-- **Per-process graph attribution** *(opt-in)*: hover a point on a Performance graph to see the top 5 processes behind that sample (CPU, RAM, disk and GPU). Off by default; enable it in Settings.
-- **Startup**: XDG autostart entries and enabled systemd units.
-- **Services**: systemctl system and user units.
-- **Settings**: adjustable refresh rate and the per-process attribution toggle.
-
-<div align="center">
-  <img src="./img/capture2.png" alt="Processes tab" width="450">
-  <img src="./img/capture3.png" alt="Startup apps" width="450">
-</div>
 
 ## Requirements
 
