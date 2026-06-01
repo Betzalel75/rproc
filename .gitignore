@@ -21,3 +21,6 @@ Thumbs.db
 # shared skills committed.
 /.claude/*
 !/.claude/skills/
+*.flatpak
+build/
+rproc*
