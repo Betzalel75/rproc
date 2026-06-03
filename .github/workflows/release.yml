@@ -179,6 +179,7 @@ jobs:
     needs: release
     if: ${{ needs.release.result == 'success' }}
     runs-on: ubuntu-latest
+    environment: AutoDeploy
     steps:
       - name: Checkout
         uses: actions/checkout@v4
