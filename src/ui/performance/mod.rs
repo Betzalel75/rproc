@@ -187,16 +187,38 @@ fn build_cards(state: &State, snap: &Snapshot) -> Vec<CardData> {
     }
 
     if let Some(b) = &snap.battery {
-        out.push(card_pct(
-            "battery",
-            "Battery",
-            b.status.label(),
-            b.capacity_pct,
-            0.0,
-            &snap.history.battery_pct,
-            theme::graph_battery(),
-            state.section == Section::Battery,
-        ));
+        // The sparkline tracks power draw, not charge level — over 60 s the
+        // level is a flat line; the draw is where the activity shows. Orange
+        // while discharging, green otherwise, matching the detail graph.
+        // A full battery draws ~0 W, which would read as an *empty* graph —
+        // show the (full) charge level instead.
+        let values = if b.status == battery::Status::Full {
+            graph::norm_f32(&snap.history.battery_pct, 100.0)
+        } else {
+            let abs: VecDeque<f32> = snap
+                .history
+                .battery_power_w
+                .iter()
+                .map(|v| v.abs())
+                .collect();
+            let max = widgets::max_in(abs.iter().map(|v| *v as f64)).max(1.0) as f32;
+            graph::norm_f32(&abs, max)
+        };
+        let color = if b.status == battery::Status::Discharging {
+            theme::graph_battery_drain()
+        } else {
+            theme::graph_battery()
+        };
+        out.push(CardData {
+            id: ss("battery"),
+            title: ss("Battery"),
+            subtitle: ss(b.status.label()),
+            value: ss(&format!("{:.0}%", b.capacity_pct)),
+            temp: ss(""),
+            color,
+            values,
+            selected: state.section == Section::Battery,
+        });
     }
 
     out
@@ -460,12 +482,26 @@ fn apply_detail(window: &MainWindow, state: &State, snap: &Snapshot, attribution
                     parts.push(&b.technology);
                 }
                 subtitle = parts.join(" · ");
-                graph_title = "Charge (last 60s)";
-                series.push(series_f32(
-                    &snap.history.battery_pct,
-                    100.0,
-                    theme::graph_battery(),
-                ));
+                if b.status == battery::Status::Full {
+                    // ~0 W when full would read as an empty graph; plot the
+                    // (full) charge level instead.
+                    graph_title = "Charge (last 60s)";
+                    series.push(series_f32(
+                        &snap.history.battery_pct,
+                        100.0,
+                        theme::graph_battery(),
+                    ));
+                } else {
+                    graph_title = "Power (last 60s)";
+                    // Split the signed series so discharge (orange) and charge
+                    // (green) segments keep their color through the history.
+                    let power = &snap.history.battery_power_w;
+                    let max = widgets::max_in(power.iter().map(|v| v.abs() as f64)).max(1.0) as f32;
+                    let drain: VecDeque<f32> = power.iter().map(|v| v.max(0.0)).collect();
+                    let gain: VecDeque<f32> = power.iter().map(|v| (-v).max(0.0)).collect();
+                    series.push(series_f32(&drain, max, theme::graph_battery_drain()));
+                    series.push(series_f32(&gain, max, theme::graph_battery()));
+                }
                 stats.push(stat("Charge", &format!("{:.0}%", b.capacity_pct)));
                 let status = if b.ac_online && b.status != battery::Status::Charging {
                     format!("{} (AC connected)", b.status.label())
@@ -538,14 +574,11 @@ fn section_refs<'a>(
     let mut data: Vec<(String, SeriesRef<'a>)> = Vec::new();
     let kind = match section {
         Section::Cpu => {
-            data.push((String::new(), SeriesRef::F32(&snap.history.cpu_total, true)));
+            data.push((String::new(), SeriesRef::Pct(&snap.history.cpu_total)));
             Some(attribution::Kind::Cpu)
         }
         Section::Memory => {
-            data.push((
-                String::new(),
-                SeriesRef::F32(&snap.history.ram_used_pct, true),
-            ));
+            data.push((String::new(), SeriesRef::Pct(&snap.history.ram_used_pct)));
             Some(attribution::Kind::Ram)
         }
         Section::Disk(i) => snap.system.disks.get(i).map(|d| {
@@ -555,35 +588,50 @@ fn section_refs<'a>(
                 .disk_write_bps
                 .get(&d.name)
                 .unwrap_or(empty_f64);
-            data.push(("read".into(), SeriesRef::F64(r)));
-            data.push(("write".into(), SeriesRef::F64(w)));
+            data.push(("read".into(), SeriesRef::Bps(r)));
+            data.push(("write".into(), SeriesRef::Bps(w)));
             attribution::Kind::Disk
         }),
         Section::Network(i) => {
             if let Some(n) = snap.system.nets.get(i) {
                 let rx = snap.history.net_rx_bps.get(&n.name).unwrap_or(empty_f64);
                 let tx = snap.history.net_tx_bps.get(&n.name).unwrap_or(empty_f64);
-                data.push(("rx".into(), SeriesRef::F64(rx)));
-                data.push(("tx".into(), SeriesRef::F64(tx)));
+                data.push(("rx".into(), SeriesRef::Bps(rx)));
+                data.push(("tx".into(), SeriesRef::Bps(tx)));
             }
             None
         }
         Section::Gpu(i) => snap.gpus.get(i).map(|g| {
             let util = snap.history.gpu_util.get(i).unwrap_or(empty_f32);
-            data.push(("util".into(), SeriesRef::F32(util, true)));
+            data.push(("util".into(), SeriesRef::Pct(util)));
             if g.mem_total > 0 {
                 let mem = snap.history.gpu_mem_pct.get(i).unwrap_or(empty_f32);
                 let name = if g.mem_shared { "mem" } else { "vram" };
-                data.push((name.into(), SeriesRef::F32(mem, true)));
+                data.push((name.into(), SeriesRef::Pct(mem)));
             }
             attribution::Kind::Gpu
         }),
         Section::Battery => {
-            data.push((
-                String::new(),
-                SeriesRef::F32(&snap.history.battery_pct, true),
-            ));
-            None
+            // Mirror the plotted series: charge level leads when full,
+            // power draw otherwise.
+            if snap
+                .battery
+                .as_ref()
+                .is_some_and(|b| b.status == battery::Status::Full)
+            {
+                data.push((String::new(), SeriesRef::Pct(&snap.history.battery_pct)));
+                data.push((
+                    "power".into(),
+                    SeriesRef::Watts(&snap.history.battery_power_w),
+                ));
+            } else {
+                data.push((
+                    String::new(),
+                    SeriesRef::Watts(&snap.history.battery_power_w),
+                ));
+                data.push(("charge".into(), SeriesRef::Pct(&snap.history.battery_pct)));
+            }
+            Some(attribution::Kind::Battery)
         }
     };
     (data, kind)
@@ -655,19 +703,30 @@ pub fn apply_hover(window: &MainWindow, state: &State, snap: &Snapshot, attribut
 }
 
 /// Borrowed series used only to compute the hover readout value at a plot-x.
+/// The variant picks the unit the value is formatted with.
 enum SeriesRef<'a> {
-    /// f32 percentage series; the bool marks it as a percentage for formatting.
-    F32(&'a VecDeque<f32>, bool),
-    F64(&'a VecDeque<f64>),
+    Pct(&'a VecDeque<f32>),
+    Watts(&'a VecDeque<f32>),
+    Bps(&'a VecDeque<f64>),
 }
 
 impl SeriesRef<'_> {
     fn value_at(&self, snapped_x: f64) -> Option<String> {
         match self {
-            SeriesRef::F32(d, _) => widgets::sample_for_plot_x(snapped_x, d.len())
+            SeriesRef::Pct(d) => widgets::sample_for_plot_x(snapped_x, d.len())
                 .and_then(|i| d.get(i))
                 .map(|v| format_pct_value(*v as f64)),
-            SeriesRef::F64(d) => widgets::sample_for_plot_x(snapped_x, d.len())
+            // Signed watts (see History::battery_power_w): negative = charging.
+            SeriesRef::Watts(d) => widgets::sample_for_plot_x(snapped_x, d.len())
+                .and_then(|i| d.get(i))
+                .map(|v| {
+                    if *v < 0.0 {
+                        format!("{:.1} W charging", -v)
+                    } else {
+                        format!("{v:.1} W")
+                    }
+                }),
+            SeriesRef::Bps(d) => widgets::sample_for_plot_x(snapped_x, d.len())
                 .and_then(|i| d.get(i))
                 .map(|v| widgets::format_bps(*v)),
         }
