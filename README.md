@@ -4,7 +4,7 @@
 
 **A resource & process monitor for Linux, inspired by the Windows 11 Task Manager.**
 
-Built in Rust with [`Slint`](https://slint.dev), rendered by its software backend (no GPU context) for a small memory footprint.
+Built in Rust with [`Slint`](https://slint.dev)
 
 [![CI](https://github.com/Trystan-SA/rproc/actions/workflows/ci.yml/badge.svg)](https://github.com/Trystan-SA/rproc/actions/workflows/ci.yml)
 [![Release](https://github.com/Trystan-SA/rproc/actions/workflows/release.yml/badge.svg)](https://github.com/Trystan-SA/rproc/actions/workflows/release.yml)
