@@ -6,12 +6,131 @@
 //! every tick, so a single atomic read here keeps the call sites (which take no
 //! theme argument) unchanged while the colors follow the user's selection. Set
 //! it from `app.rs` whenever the theme toggles, and once at startup.
+//!
+//! `set_theme(Theme)` resolves `Theme::System` via D-Bus / gsettings and stores
+//! the result; `set_dark(bool)` is the low-level setter used by the glue when
+//! the resolved value is already known.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use slint::Color;
 
 static DARK: AtomicBool = AtomicBool::new(true);
+
+// ---------------------------------------------------------------------------
+// Theme enum + global
+// ---------------------------------------------------------------------------
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Theme {
+    Dark = 0,
+    Light = 1,
+    /// Follow the desktop colour scheme. Detected via D-Bus (portal) with a
+    /// gsettings fallback for GNOME/Cinnamon. Re-sampled every 10 s so
+    /// flipping the system preference takes effect without a restart.
+    System = 2,
+}
+
+impl Theme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Theme::Dark => "dark",
+            Theme::Light => "light",
+            Theme::System => "system",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "dark" => Some(Theme::Dark),
+            "light" => Some(Theme::Light),
+            "system" => Some(Theme::System),
+            _ => None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// System theme detection
+// ---------------------------------------------------------------------------
+
+/// Resolve a `Theme` to whether the UI should render dark. For
+/// `Theme::System`, probes the desktop colour-scheme preference; falls back
+/// to dark if detection fails.
+pub fn resolve_theme(t: Theme) -> bool {
+    match t {
+        Theme::Dark => true,
+        Theme::Light => false,
+        Theme::System => detect_system_theme() != Some(Theme::Light),
+    }
+}
+
+/// Set the process-wide theme, resolving `Theme::System` via D-Bus / gsettings.
+/// Returns the resolved dark/light boolean so the caller can forward it to the
+/// Slint `Theme.dark` global.
+pub fn set_theme(t: Theme) -> bool {
+    let dark = resolve_theme(t);
+    DARK.store(dark, Ordering::Relaxed);
+    dark
+}
+
+/// Probe the desktop colour-scheme preference. Returns `Some(Theme::Light)`
+/// for a light desktop, `Some(Theme::Dark)` for dark, and `None` if
+/// detection failed (falls back to dark).
+///
+/// Tries in order:
+/// 1. D-Bus freedesktop portal (`org.freedesktop.portal.Settings.Read`)
+///    — the cross-desktop standard (GNOME, KDE, wlroots, etc.).
+/// 2. `gsettings` — GNOME/Cinnamon fallback when D-Bus isn't available.
+pub fn detect_system_theme() -> Option<Theme> {
+    detect_via_dbus().or_else(detect_via_gsettings)
+}
+
+fn detect_via_dbus() -> Option<Theme> {
+    let out = std::process::Command::new("dbus-send")
+        .args([
+            "--session",
+            "--print-reply",
+            "--dest=org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Settings.Read",
+            "string:org.freedesktop.appearance",
+            "string:color-scheme",
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(num) = line.strip_prefix("uint32 ") {
+            return match num.trim().parse::<u32>().ok()? {
+                1 => Some(Theme::Dark),
+                _ => Some(Theme::Light),
+            };
+        }
+    }
+    None
+}
+
+fn detect_via_gsettings() -> Option<Theme> {
+    let out = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    if text.contains("prefer-dark") {
+        Some(Theme::Dark)
+    } else {
+        Some(Theme::Light)
+    }
+}
 
 pub fn set_dark(dark: bool) {
     DARK.store(dark, Ordering::Relaxed);

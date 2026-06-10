@@ -50,10 +50,10 @@ struct UiState {
 pub fn run(settings: Settings) -> anyhow::Result<()> {
     let window = MainWindow::new()?;
 
-    // Apply the persisted light/dark choice before the first render: the Slint
+    // Apply the persisted theme before the first render: the Slint
     // `Theme` global drives the `.slint` palette, the atomic drives the colors
     // the glue bakes into row/series data.
-    let dark = settings.dark_mode();
+    let dark = theme::resolve_theme(settings.theme());
     theme::set_dark(dark);
     window.global::<Theme>().set_dark(dark);
 
@@ -106,6 +106,24 @@ pub fn run(settings: Settings) -> anyhow::Result<()> {
                     apply_ui_scale(&window, &mut s);
                 }
                 tick(&window, &mut s);
+            }
+        });
+    }
+
+    // Re-detect the system colour scheme every 10 s when "System" theme is
+    // selected, so flipping the desktop preference takes effect without a restart.
+    let theme_timer = slint::Timer::default();
+    {
+        let w = window.as_weak();
+        let st = state.clone();
+        theme_timer.start(TimerMode::Repeated, Duration::from_secs(10), move || {
+            if let Some(window) = w.upgrade() {
+                let s = st.borrow();
+                if s.settings.theme() == theme::Theme::System {
+                    let dark = theme::resolve_theme(theme::Theme::System);
+                    theme::set_dark(dark);
+                    window.global::<Theme>().set_dark(dark);
+                }
             }
         });
     }
@@ -432,9 +450,13 @@ fn install_callbacks(window: &MainWindow, state: &Rc<RefCell<UiState>>) {
     window.on_cfg_gpu_toggled(handler!(|w, s, e: bool| {
         s.settings.set_gpu_enabled(e);
     }));
-    window.on_cfg_theme_toggled(handler!(|w, s, dark: bool| {
-        s.settings.set_dark_mode(dark);
-        theme::set_dark(dark);
+    window.on_cfg_theme_changed(handler!(|w, s, index: i32| {
+        let t = match index {
+            0 => theme::Theme::Dark,
+            1 => theme::Theme::Light,
+            _ => theme::Theme::System,
+        };
+        let dark = s.settings.set_theme(t);
         w.global::<Theme>().set_dark(dark);
     }));
     window.on_cfg_set_ui_scale(handler!(|w, s, pct: i32| {
