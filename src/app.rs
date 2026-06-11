@@ -110,24 +110,6 @@ pub fn run(settings: Settings) -> anyhow::Result<()> {
         });
     }
 
-    // Re-detect the system colour scheme every 10 s when "System" theme is
-    // selected, so flipping the desktop preference takes effect without a restart.
-    let theme_timer = slint::Timer::default();
-    {
-        let w = window.as_weak();
-        let st = state.clone();
-        theme_timer.start(TimerMode::Repeated, Duration::from_secs(10), move || {
-            if let Some(window) = w.upgrade() {
-                let s = st.borrow();
-                if s.settings.theme() == theme::Theme::System {
-                    let dark = theme::resolve_theme(theme::Theme::System);
-                    theme::set_dark(dark);
-                    window.global::<Theme>().set_dark(dark);
-                }
-            }
-        });
-    }
-
     window.run()?;
 
     // Persist resolved icons on clean shutdown (see ui::icons::Resolver).

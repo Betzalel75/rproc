@@ -9,7 +9,8 @@
 //!
 //! `set_theme(Theme)` resolves `Theme::System` via D-Bus / gsettings and stores
 //! the result; `set_dark(bool)` is the low-level setter used by the glue when
-//! the resolved value is already known.
+//! the resolved value is already known. Theme detection happens at startup
+//! and when the user toggles the setting there is no background polling.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -26,8 +27,8 @@ pub enum Theme {
     Dark = 0,
     Light = 1,
     /// Follow the desktop colour scheme. Detected via D-Bus (portal) with a
-    /// gsettings fallback for GNOME/Cinnamon. Re-sampled every 10 s so
-    /// flipping the system preference takes effect without a restart.
+    /// gsettings fallback for GNOME/Cinnamon. Resolved once at startup
+    /// and when the user selects this option in settings.
     System = 2,
 }
 
