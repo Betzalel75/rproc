@@ -16,6 +16,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use slint::Color;
 
+#[cfg(test)]
+mod tests;
+
 static DARK: AtomicBool = AtomicBool::new(true);
 
 // ---------------------------------------------------------------------------
@@ -30,25 +33,6 @@ pub enum Theme {
     /// gsettings fallback for GNOME/Cinnamon. Resolved once at startup
     /// and when the user selects this option in settings.
     System = 2,
-}
-
-impl Theme {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Theme::Dark => "dark",
-            Theme::Light => "light",
-            Theme::System => "system",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "dark" => Some(Theme::Dark),
-            "light" => Some(Theme::Light),
-            "system" => Some(Theme::System),
-            _ => None,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -103,12 +87,17 @@ fn detect_via_dbus() -> Option<Theme> {
     if !out.status.success() {
         return None;
     }
-    let text = String::from_utf8_lossy(&out.stdout);
+    parse_dbus_color_scheme(&String::from_utf8_lossy(&out.stdout))
+}
 
-    for line in text.lines() {
-        let line = line.trim();
-        if let Some(num) = line.strip_prefix("uint32 ") {
-            return match num.trim().parse::<u32>().ok()? {
+/// Parse the portal reply from `dbus-send --print-reply`. The value arrives
+/// as `variant variant uint32 N` — possibly on one line — so scan tokens
+/// rather than expecting `uint32` at the start of a line.
+fn parse_dbus_color_scheme(text: &str) -> Option<Theme> {
+    let mut tokens = text.split_whitespace();
+    while let Some(tok) = tokens.next() {
+        if tok == "uint32" {
+            return match tokens.next()?.parse::<u32>().ok()? {
                 1 => Some(Theme::Dark),
                 _ => Some(Theme::Light),
             };
